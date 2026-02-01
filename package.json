@@ -17,17 +17,25 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:server": "tsx src/server/index.ts",
+    "dev:gui": "cd gui && npm run dev",
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:gui\""
   },
   "dependencies": {
-    "israeli-bank-scrapers": "file:../israeli-bank-scrapers",
     "commander": "^12.1.0",
-    "dotenv": "^16.4.5"
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "israeli-bank-scrapers": "file:../israeli-bank-scrapers"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "concurrently": "^9.2.1",
     "eslint": "^8.57.0",
     "prettier": "^3.4.0",
     "tsx": "^4.19.0",
