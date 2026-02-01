@@ -8,6 +8,9 @@ import {
   shouldSkipTransaction,
   transformTransaction,
   transformTransactions,
+  groupByAccount,
+  filterAndPartition,
+  calculateSummary,
   type EnrichedTransaction,
 } from "./transformer.js";
 
@@ -308,5 +311,146 @@ describe("transformTransactions", () => {
 
   it("returns empty array for empty input", () => {
     expect(transformTransactions([])).toEqual([]);
+  });
+});
+
+describe("groupByAccount", () => {
+  const makeTxn = (accountName: string, amount: number): EnrichedTransaction => ({
+    type: "normal" as any,
+    date: "2024-03-15",
+    processedDate: "2024-03-15",
+    originalAmount: Math.abs(amount),
+    originalCurrency: "ILS",
+    chargedAmount: amount,
+    description: "Test",
+    status: "completed" as any,
+    accountName,
+  });
+
+  it("groups transactions by account name", () => {
+    const txns = [makeTxn("Max", -100), makeTxn("Leumi", -200), makeTxn("Max", -50)];
+    const result = groupByAccount(txns);
+    expect(result.size).toBe(2);
+    expect(result.get("Max")).toHaveLength(2);
+    expect(result.get("Leumi")).toHaveLength(1);
+  });
+
+  it("uses 'unknown' for missing account name", () => {
+    const txn: EnrichedTransaction = {
+      type: "normal" as any,
+      date: "2024-03-15",
+      processedDate: "2024-03-15",
+      originalAmount: 100,
+      originalCurrency: "ILS",
+      chargedAmount: -100,
+      description: "Test",
+      status: "completed" as any,
+    };
+    const result = groupByAccount([txn]);
+    expect(result.has("unknown")).toBe(true);
+  });
+
+  it("returns empty map for empty input", () => {
+    expect(groupByAccount([]).size).toBe(0);
+  });
+});
+
+describe("filterAndPartition", () => {
+  const makeTxn = (status: string, amount: number): EnrichedTransaction => ({
+    type: "normal" as any,
+    date: "2024-03-15",
+    processedDate: "2024-03-15",
+    originalAmount: Math.abs(amount),
+    originalCurrency: "ILS",
+    chargedAmount: amount,
+    description: "Test",
+    status: status as any,
+  });
+
+  it("keeps completed transactions with non-zero amounts", () => {
+    const txns = [makeTxn("completed", -100), makeTxn("completed", 50)];
+    const { kept, skipped } = filterAndPartition(txns);
+    expect(kept).toHaveLength(2);
+    expect(skipped).toHaveLength(0);
+  });
+
+  it("skips pending transactions with reason", () => {
+    const txns = [makeTxn("pending", -100)];
+    const { kept, skipped } = filterAndPartition(txns);
+    expect(kept).toHaveLength(0);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0].reason).toBe("Pending");
+  });
+
+  it("skips zero-amount transactions with reason", () => {
+    const txns = [makeTxn("completed", 0)];
+    const { kept, skipped } = filterAndPartition(txns);
+    expect(kept).toHaveLength(0);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0].reason).toBe("Zero amount");
+  });
+
+  it("partitions mixed transactions", () => {
+    const txns = [
+      makeTxn("completed", -100),
+      makeTxn("pending", -200),
+      makeTxn("completed", 0),
+      makeTxn("completed", 50),
+    ];
+    const { kept, skipped } = filterAndPartition(txns);
+    expect(kept).toHaveLength(2);
+    expect(skipped).toHaveLength(2);
+  });
+
+  it("returns empty arrays for empty input", () => {
+    const { kept, skipped } = filterAndPartition([]);
+    expect(kept).toHaveLength(0);
+    expect(skipped).toHaveLength(0);
+  });
+});
+
+describe("calculateSummary", () => {
+  const makeTxn = (accountName: string, amount: number): EnrichedTransaction => ({
+    type: "normal" as any,
+    date: "2024-03-15",
+    processedDate: "2024-03-15",
+    originalAmount: Math.abs(amount),
+    originalCurrency: "ILS",
+    chargedAmount: amount,
+    description: "Test",
+    status: "completed" as any,
+    accountName,
+  });
+
+  it("calculates per-account and total summaries", () => {
+    const txns = [
+      makeTxn("Max", -100),
+      makeTxn("Max", -50),
+      makeTxn("Max", 200),
+      makeTxn("Leumi", -300),
+    ];
+    const summary = calculateSummary(txns);
+
+    expect(summary.byAccount.size).toBe(2);
+
+    const max = summary.byAccount.get("Max")!;
+    expect(max.count).toBe(3);
+    expect(max.outflow).toBe(150);
+    expect(max.inflow).toBe(200);
+
+    const leumi = summary.byAccount.get("Leumi")!;
+    expect(leumi.count).toBe(1);
+    expect(leumi.outflow).toBe(300);
+    expect(leumi.inflow).toBe(0);
+
+    expect(summary.totalOutflow).toBe(450);
+    expect(summary.totalInflow).toBe(200);
+  });
+
+  it("returns zeros for empty input", () => {
+    const summary = calculateSummary([]);
+    expect(summary.byAccount.size).toBe(0);
+    expect(summary.totalOutflow).toBe(0);
+    expect(summary.totalInflow).toBe(0);
   });
 });

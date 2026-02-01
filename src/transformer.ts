@@ -229,7 +229,6 @@ export function transformTransaction(txn: EnrichedTransaction): YnabRow | null {
   // Determine the date to use (prefer charge date, fall back to transaction date)
   const rawDate = txn.processedDate || txn.date;
   if (!rawDate) {
-    console.warn(`Transaction missing date: ${txn.description}`);
     return null;
   }
 
@@ -240,7 +239,6 @@ export function transformTransaction(txn: EnrichedTransaction): YnabRow | null {
   } else {
     const parsed = parseDate(rawDate);
     if (!parsed) {
-      console.warn(`Invalid date "${rawDate}" for transaction: ${txn.description}`);
       return null;
     }
     date = formatDate(parsed);
@@ -281,4 +279,86 @@ export function transformTransactions(transactions: EnrichedTransaction[]): Ynab
   rows.sort((a, b) => b.date.localeCompare(a.date));
 
   return rows;
+}
+
+/**
+ * Group transactions by account name.
+ */
+export function groupByAccount(transactions: EnrichedTransaction[]): Map<string, EnrichedTransaction[]> {
+  const byAccount = new Map<string, EnrichedTransaction[]>();
+
+  for (const txn of transactions) {
+    const key = txn.accountName ?? "unknown";
+    const list = byAccount.get(key) ?? [];
+    list.push(txn);
+    byAccount.set(key, list);
+  }
+
+  return byAccount;
+}
+
+export interface SkippedItem {
+  txn: EnrichedTransaction;
+  reason: string;
+}
+
+/**
+ * Partition transactions into kept and skipped, with skip reasons.
+ */
+export function filterAndPartition(
+  transactions: EnrichedTransaction[]
+): { kept: EnrichedTransaction[]; skipped: SkippedItem[] } {
+  const kept: EnrichedTransaction[] = [];
+  const skipped: SkippedItem[] = [];
+
+  for (const txn of transactions) {
+    if (shouldSkipTransaction(txn)) {
+      const reason = txn.status === ("pending" as TransactionStatuses) ? "Pending" : "Zero amount";
+      skipped.push({ txn, reason });
+    } else {
+      kept.push(txn);
+    }
+  }
+
+  return { kept, skipped };
+}
+
+export interface AccountSummaryData {
+  count: number;
+  outflow: number;
+  inflow: number;
+}
+
+export interface TransactionSummary {
+  byAccount: Map<string, AccountSummaryData>;
+  totalOutflow: number;
+  totalInflow: number;
+}
+
+/**
+ * Calculate summary statistics for a set of transactions.
+ */
+export function calculateSummary(transactions: EnrichedTransaction[]): TransactionSummary {
+  const byAccount = new Map<string, AccountSummaryData>();
+  let totalOutflow = 0;
+  let totalInflow = 0;
+
+  for (const txn of transactions) {
+    const key = txn.accountName ?? "unknown";
+    const existing = byAccount.get(key) ?? { count: 0, outflow: 0, inflow: 0 };
+
+    const amount = txn.chargedAmount ?? 0;
+    if (amount < 0) existing.outflow += Math.abs(amount);
+    if (amount > 0) existing.inflow += amount;
+    existing.count++;
+
+    byAccount.set(key, existing);
+  }
+
+  for (const summary of byAccount.values()) {
+    totalOutflow += summary.outflow;
+    totalInflow += summary.inflow;
+  }
+
+  return { byAccount, totalOutflow, totalInflow };
 }
