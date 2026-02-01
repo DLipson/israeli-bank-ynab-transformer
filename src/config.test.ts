@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { validateDaysBack, calculateStartDate, getSupportedBanks } from "./config.js";
+import { describe, it, expect } from "vitest";
+import { validateDaysBack, calculateStartDate, getSupportedBanks, loadConfig } from "./config.js";
 
 describe("validateDaysBack", () => {
   it("returns default for undefined", () => {
@@ -32,11 +32,12 @@ describe("validateDaysBack", () => {
   });
 
   it("warns for very large values but still returns them", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = validateDaysBack(400);
     expect(result).toBe(400);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("very large"));
-    warnSpy.mockRestore();
+    const config = loadConfig({ daysBack: 400 });
+    expect(config.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("very large")])
+    );
   });
 });
 

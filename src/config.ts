@@ -14,6 +14,7 @@ export interface Config {
   outputDir: string;
   startDate: Date;
   showBrowser: boolean;
+  warnings: string[];
 }
 
 export interface LoadConfigOptions {
@@ -72,10 +73,6 @@ export function validateDaysBack(value: unknown): number {
     throw new Error(`Invalid daysBack value: ${String(value)}. Must be a positive number.`);
   }
 
-  if (num > 365) {
-    console.warn(`Warning: daysBack=${num} is very large. Most banks only return 90 days of data.`);
-  }
-
   return num;
 }
 
@@ -97,10 +94,15 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   const daysBack = validateDaysBack(options.daysBack);
   const startDate = calculateStartDate(daysBack);
   const accounts = buildAccountConfigs();
+  const warnings: string[] = [];
+
+  if (daysBack > 365) {
+    warnings.push(`Warning: daysBack=${daysBack} is very large. Most banks only return 90 days of data.`);
+  }
 
   const enabledCount = accounts.filter((a) => a.enabled).length;
   if (enabledCount === 0) {
-    console.warn(
+    warnings.push(
       "Warning: No accounts have credentials configured. Copy .env.example to .env and fill in your credentials."
     );
   }
@@ -110,6 +112,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     outputDir: getEnv("OUTPUT_DIR") || DEFAULT_OUTPUT_DIR,
     startDate,
     showBrowser: options.showBrowser ?? false,
+    warnings,
   };
 }
 
