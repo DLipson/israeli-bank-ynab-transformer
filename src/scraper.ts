@@ -15,9 +15,10 @@ export interface ScrapeResult {
 export async function scrapeAccount(
   account: AccountConfig,
   startDate: Date,
-  showBrowser: boolean
+  showBrowser: boolean,
+  onProgress?: (message: string) => void
 ): Promise<ScrapeResult> {
-  console.log(`\nScraping ${account.name}...`);
+  onProgress?.(`\nScraping ${account.name}...`);
 
   const options: ScraperOptions = {
     companyId: account.companyId,
@@ -32,13 +33,13 @@ export async function scrapeAccount(
 
     // Set up progress logging
     scraper.onProgress((companyId, payload) => {
-      console.log(`  [${account.name}] ${payload.type}`);
+      onProgress?.(`  [${account.name}] ${payload.type}`);
     });
 
-    const result = await scraper.scrape(account.credentials);
+    const result = await scraper.scrape(account.credentials as any);
 
     if (!result.success) {
-      console.error(`  Error: ${result.errorType} - ${result.errorMessage}`);
+      onProgress?.(`  Error: ${result.errorType} - ${result.errorMessage}`);
       return {
         accountName: account.name,
         success: false,
@@ -51,7 +52,7 @@ export async function scrapeAccount(
     const transactions: EnrichedTransaction[] = [];
 
     for (const bankAccount of result.accounts ?? []) {
-      console.log(`  Found ${bankAccount.txns.length} transactions in account ${bankAccount.accountNumber}`);
+      onProgress?.(`  Found ${bankAccount.txns.length} transactions in account ${bankAccount.accountNumber}`);
 
       for (const txn of bankAccount.txns) {
         transactions.push({
@@ -62,7 +63,7 @@ export async function scrapeAccount(
       }
     }
 
-    console.log(`  Total: ${transactions.length} transactions from ${account.name}`);
+    onProgress?.(`  Total: ${transactions.length} transactions from ${account.name}`);
 
     return {
       accountName: account.name,
@@ -71,7 +72,7 @@ export async function scrapeAccount(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`  Exception: ${message}`);
+    onProgress?.(`  Exception: ${message}`);
     return {
       accountName: account.name,
       success: false,
@@ -87,23 +88,24 @@ export async function scrapeAccount(
 export async function scrapeAllAccounts(
   accounts: AccountConfig[],
   startDate: Date,
-  showBrowser: boolean
+  showBrowser: boolean,
+  onProgress?: (message: string) => void
 ): Promise<ScrapeResult[]> {
   const enabledAccounts = accounts.filter((a) => a.enabled);
 
   if (enabledAccounts.length === 0) {
-    console.log("No accounts enabled for scraping.");
+    onProgress?.("No accounts enabled for scraping.");
     return [];
   }
 
-  console.log(`\nScraping ${enabledAccounts.length} account(s)...`);
-  console.log(`Start date: ${startDate.toISOString().split("T")[0]}`);
+  onProgress?.(`\nScraping ${enabledAccounts.length} account(s)...`);
+  onProgress?.(`Start date: ${startDate.toISOString().split("T")[0]}`);
 
   const results: ScrapeResult[] = [];
 
   // Scrape accounts sequentially to avoid overwhelming the browser
   for (const account of enabledAccounts) {
-    const result = await scrapeAccount(account, startDate, showBrowser);
+    const result = await scrapeAccount(account, startDate, showBrowser, onProgress);
     results.push(result);
   }
 
@@ -112,14 +114,14 @@ export async function scrapeAllAccounts(
   const failed = results.filter((r) => !r.success);
   const totalTxns = results.reduce((sum, r) => sum + r.transactions.length, 0);
 
-  console.log(`\n--- Summary ---`);
-  console.log(`Successful: ${successful.length}/${results.length} accounts`);
-  console.log(`Total transactions: ${totalTxns}`);
+  onProgress?.(`\n--- Summary ---`);
+  onProgress?.(`Successful: ${successful.length}/${results.length} accounts`);
+  onProgress?.(`Total transactions: ${totalTxns}`);
 
   if (failed.length > 0) {
-    console.log(`\nFailed accounts:`);
+    onProgress?.(`\nFailed accounts:`);
     for (const f of failed) {
-      console.log(`  - ${f.accountName}: ${f.error}`);
+      onProgress?.(`  - ${f.accountName}: ${f.error}`);
     }
   }
 
