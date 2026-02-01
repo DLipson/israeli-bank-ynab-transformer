@@ -66,8 +66,8 @@ describe("createAuditLogger", () => {
       originalCurrency: "ILS",
       chargedAmount: 0,
       description: "Cancelled Transaction",
-      status: "completed",
-      type: "normal",
+      status: "completed" as any,
+      type: "normal" as any,
     };
 
     logger.recordSkipped(txn, "Zero amount");
@@ -114,7 +114,7 @@ function makeTxn(amount: number): EnrichedTransaction {
     originalCurrency: "ILS",
     chargedAmount: amount,
     description: "Test Transaction",
-    status: "completed",
-    type: "normal",
+    status: "completed" as any,
+    type: "normal" as any,
   };
 }

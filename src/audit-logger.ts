@@ -1,5 +1,3 @@
-import { writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { EnrichedTransaction, YnabRow } from "./transformer.js";
 import type { ScrapeResult } from "./scraper.js";
@@ -27,12 +25,13 @@ export interface AuditLog {
   totalOutflow: number;
   totalInflow: number;
   checksum: string | null;
+  // Detailed logging (optional)
+  rawScraperResults?: any[];
+  transformationDetails?: Array<{ raw: EnrichedTransaction; transformed: YnabRow }>;
+  detailedLoggingLimit?: number;
 }
 
-const DEFAULT_LOG_DIR = "./logs";
-const DEFAULT_RETENTION_DAYS = 14;
-
-export function createAuditLogger(logDir: string = DEFAULT_LOG_DIR) {
+export function createAuditLogger() {
   const log: AuditLog = {
     timestamp: new Date().toISOString(),
     accounts: [],
@@ -67,6 +66,18 @@ export function createAuditLogger(logDir: string = DEFAULT_LOG_DIR) {
       }
     },
 
+    recordRawScrapeResults(results: ScrapeResult[], limit: number = 0) {
+      // Store the raw scraper results for detailed logging
+      // If limit is 0, store all; otherwise store only the first 'limit' transactions from each account
+      log.detailedLoggingLimit = limit;
+      log.rawScraperResults = results.map((result) => ({
+        accountName: result.accountName,
+        success: result.success,
+        error: result.error,
+        transactions: limit > 0 ? result.transactions.slice(0, limit) : result.transactions,
+      }));
+    },
+
     recordSkipped(txn: EnrichedTransaction, reason: string) {
       log.skipped.push({
         reason,
@@ -74,6 +85,14 @@ export function createAuditLogger(logDir: string = DEFAULT_LOG_DIR) {
         amount: txn.chargedAmount ?? 0,
         date: txn.processedDate ?? txn.date ?? "unknown",
       });
+    },
+
+    recordTransformations(
+      pairs: Array<{ raw: EnrichedTransaction; transformed: YnabRow }>,
+      limit: number = 0
+    ) {
+      // Store transformation details for detailed logging
+      log.transformationDetails = limit > 0 ? pairs.slice(0, limit) : pairs;
     },
 
     recordOutput(rows: YnabRow[], outputPath: string, csvContent: string) {
@@ -90,20 +109,12 @@ export function createAuditLogger(logDir: string = DEFAULT_LOG_DIR) {
       log.checksum = createHash("sha256").update(csvContent).digest("hex").slice(0, 16);
     },
 
-    save(): string {
-      if (!existsSync(logDir)) {
-        mkdirSync(logDir, { recursive: true });
-      }
+    format(): string {
+      return formatAuditLog(log);
+    },
 
-      cleanOldLogs(logDir, DEFAULT_RETENTION_DAYS);
-
-      const filename = `run-${log.timestamp.replace(/:/g, "-").replace(/\.\d{3}Z$/, "")}.log`;
-      const filepath = join(logDir, filename);
-
-      const content = formatAuditLog(log);
-      writeFileSync(filepath, content, "utf-8");
-
-      return filepath;
+    getFilename(): string {
+      return `run-${log.timestamp.replace(/:/g, "-").replace(/\.\d{3}Z$/, "")}.log`;
     },
 
     getLog(): AuditLog {
@@ -112,7 +123,7 @@ export function createAuditLogger(logDir: string = DEFAULT_LOG_DIR) {
   };
 }
 
-function formatAuditLog(log: AuditLog): string {
+export function formatAuditLog(log: AuditLog): string {
   const lines: string[] = [];
 
   lines.push(`=== Scrape Run: ${log.timestamp} ===`);
@@ -125,7 +136,9 @@ function formatAuditLog(log: AuditLog): string {
     for (const account of log.accounts) {
       const outflow = formatCurrency(account.totalOutflow);
       const inflow = formatCurrency(account.totalInflow);
-      lines.push(`  ${account.name}: ${account.transactionCount} transactions (${outflow} out, ${inflow} in)`);
+      lines.push(
+        `  ${account.name}: ${account.transactionCount} transactions (${outflow} out, ${inflow} in)`
+      );
     }
   }
   lines.push("");
@@ -145,11 +158,62 @@ function formatAuditLog(log: AuditLog): string {
   if (log.outputFile) {
     lines.push(`Output: ${log.outputFile}`);
     lines.push(`  ${log.outputTransactionCount} transactions`);
-    lines.push(`  Total: ${formatCurrency(log.totalOutflow)} outflow, ${formatCurrency(log.totalInflow)} inflow`);
+    lines.push(
+      `  Total: ${formatCurrency(log.totalOutflow)} outflow, ${formatCurrency(log.totalInflow)} inflow`
+    );
     lines.push("");
     lines.push(`Checksum: ${log.checksum}`);
   } else {
     lines.push("Output: (none - dry run or no transactions)");
+  }
+
+  // Detailed logging sections
+  if (log.rawScraperResults && log.rawScraperResults.length > 0) {
+    lines.push("");
+    lines.push("=== DETAILED LOGGING ===");
+    lines.push("");
+    lines.push("Raw Scraper Results:");
+    if (log.detailedLoggingLimit && log.detailedLoggingLimit > 0) {
+      lines.push(`  (Showing first ${log.detailedLoggingLimit} transaction(s) per account)`);
+    } else {
+      lines.push(`  (Showing all transactions)`);
+    }
+    lines.push("");
+
+    for (const result of log.rawScraperResults) {
+      lines.push(`Account: ${result.accountName}`);
+      lines.push(`  Success: ${result.success}`);
+      if (result.error) {
+        lines.push(`  Error: ${result.error}`);
+      }
+      lines.push(`  Transactions (${result.transactions.length}):`);
+
+      for (let i = 0; i < result.transactions.length; i++) {
+        const txn = result.transactions[i];
+        lines.push(`    [${i + 1}] ${JSON.stringify(txn, null, 2).split("\n").join("\n    ")}`);
+      }
+      lines.push("");
+    }
+  }
+
+  if (log.transformationDetails && log.transformationDetails.length > 0) {
+    lines.push("");
+    lines.push("Transformation Details:");
+    if (log.detailedLoggingLimit && log.detailedLoggingLimit > 0) {
+      lines.push(`  (Showing first ${log.detailedLoggingLimit} transformation(s))`);
+    } else {
+      lines.push(`  (Showing all transformations)`);
+    }
+    lines.push("");
+
+    for (let i = 0; i < log.transformationDetails.length; i++) {
+      const { raw, transformed } = log.transformationDetails[i];
+      lines.push(`[${i + 1}] RAW:`);
+      lines.push(`    ${JSON.stringify(raw, null, 2).split("\n").join("\n    ")}`);
+      lines.push(`    TRANSFORMED:`);
+      lines.push(`    ${JSON.stringify(transformed, null, 2).split("\n").join("\n    ")}`);
+      lines.push("");
+    }
   }
 
   return lines.join("\n");
@@ -157,26 +221,4 @@ function formatAuditLog(log: AuditLog): string {
 
 function formatCurrency(amount: number): string {
   return `₪${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function cleanOldLogs(logDir: string, retentionDays: number) {
-  if (!existsSync(logDir)) return;
-
-  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-
-  try {
-    const files = readdirSync(logDir);
-    for (const file of files) {
-      if (!file.startsWith("run-") || !file.endsWith(".log")) continue;
-
-      const filepath = join(logDir, file);
-      const stats = statSync(filepath);
-
-      if (stats.mtimeMs < cutoff) {
-        unlinkSync(filepath);
-      }
-    }
-  } catch {
-    // Ignore cleanup errors
-  }
 }
