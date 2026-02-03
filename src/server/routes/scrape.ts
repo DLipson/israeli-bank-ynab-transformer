@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { loadConfig } from "../../config.js";
 import { scrapeAllAccounts } from "../../scraper.js";
@@ -276,4 +277,58 @@ router.post("/export", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/open-path
+ * Opens a file or folder in the OS file manager.
+ */
+router.post("/open-path", (req: Request, res: Response) => {
+  const { path } = req.body as { path?: string };
+
+  if (!path) {
+    res.status(400).json({ error: "Missing path" });
+    return;
+  }
+
+  const resolvedPath = resolve(path);
+
+  try {
+    const stats = statSync(resolvedPath);
+    if (!stats.isFile() && !stats.isDirectory()) {
+      res.status(400).json({ error: "Path must be a file or directory" });
+      return;
+    }
+  } catch {
+    res.status(404).json({ error: "Path not found" });
+    return;
+  }
+
+  try {
+    openInFileManager(resolvedPath);
+    res.json({ path: resolvedPath });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+  }
+});
+
 export default router;
+
+function openInFileManager(targetPath: string) {
+  const platform = process.platform;
+  let command: string;
+  let args: string[] = [];
+
+  if (platform === "win32") {
+    command = "explorer";
+    args = [targetPath];
+  } else if (platform === "darwin") {
+    command = "open";
+    args = [targetPath];
+  } else {
+    command = "xdg-open";
+    args = [targetPath];
+  }
+
+  const child = spawn(command, args, { detached: true, stdio: "ignore" });
+  child.unref();
+}

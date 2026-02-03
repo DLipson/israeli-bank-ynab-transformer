@@ -176,6 +176,19 @@ export async function exportCSV(body: {
   return res.json();
 }
 
+export async function openPath(path: string): Promise<{ path: string }> {
+  const res = await fetch(`${BASE}/open-path`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || "Failed to open path");
+  }
+  return res.json();
+}
+
 // --- Reconcile ---
 
 export async function reconcile(body: {

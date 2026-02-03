@@ -6,7 +6,7 @@ import { ScrapeProgress, type AccountStatus } from "@/components/ScrapeProgress"
 import { ScrapeSummary } from "@/components/ScrapeSummary";
 import { TransactionTable } from "@/components/TransactionTable";
 import { SkippedList } from "@/components/SkippedList";
-import { createScrapeStream, exportCSV, type ScrapePayload, type SSEEvent } from "@/api/client";
+import { createScrapeStream, exportCSV, openPath, type ScrapePayload, type SSEEvent } from "@/api/client";
 
 type Phase = "settings" | "progress" | "results";
 
@@ -28,6 +28,7 @@ export function ScrapePage() {
   // Results state
   const [payload, setPayload] = useState<ScrapePayload | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [openingOutput, setOpeningOutput] = useState(false);
   const [exportResult, setExportResult] = useState<{
     csvPaths: string[];
     auditLogPath: string;
@@ -139,6 +140,19 @@ export function ScrapePage() {
     setError("");
   };
 
+  const handleOpenOutput = async () => {
+    if (!outputDir) return;
+    setOpeningOutput(true);
+    setError("");
+    try {
+      await openPath(outputDir);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to open output folder");
+    } finally {
+      setOpeningOutput(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {phase === "settings" && (
@@ -223,6 +237,16 @@ export function ScrapePage() {
                         ))}
                         <li>Audit log: {exportResult.auditLogPath}</li>
                       </ul>
+                      <div className="mt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleOpenOutput}
+                          disabled={openingOutput}
+                        >
+                          {openingOutput ? "Opening..." : "Open output folder"}
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 )}
