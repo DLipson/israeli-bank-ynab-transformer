@@ -1,5 +1,5 @@
 {
-  "name": "israeli-bank-ynab-cli",
+  "name": "israeli-bank-ynab-transformer",
   "version": "1.0.0",
   "description": "Scrape Israeli bank accounts and transform to YNAB-ready CSV",
   "type": "module",
