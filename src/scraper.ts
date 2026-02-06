@@ -89,12 +89,18 @@ export async function scrapeAllAccounts(
   accounts: AccountConfig[],
   startDate: Date,
   showBrowser: boolean,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  abortSignal?: AbortSignal
 ): Promise<ScrapeResult[]> {
   const enabledAccounts = accounts.filter((a) => a.enabled);
 
   if (enabledAccounts.length === 0) {
     onProgress?.("No accounts enabled for scraping.");
+    return [];
+  }
+
+  if (abortSignal?.aborted) {
+    onProgress?.("Scrape canceled before start.");
     return [];
   }
 
@@ -105,8 +111,16 @@ export async function scrapeAllAccounts(
 
   // Scrape accounts sequentially to avoid overwhelming the browser
   for (const account of enabledAccounts) {
+    if (abortSignal?.aborted) {
+      onProgress?.("Scrape canceled.");
+      break;
+    }
     const result = await scrapeAccount(account, startDate, showBrowser, onProgress);
     results.push(result);
+  }
+
+  if (abortSignal?.aborted) {
+    return results;
   }
 
   // Summary

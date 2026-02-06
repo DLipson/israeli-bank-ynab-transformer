@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { loadConfig } from "../../config.js";
 import { scrapeAllAccounts } from "../../scraper.js";
 import {
@@ -20,6 +20,7 @@ import type { ScrapeResult } from "../../scraper.js";
 import type { SkippedItem } from "../../transformer.js";
 
 const router = Router();
+const activeScrapes = new Map<string, AbortController>();
 
 /**
  * GET /api/scrape/stream
@@ -30,6 +31,24 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
   const showBrowser = req.query.showBrowser === "true";
   const enableDetailedLogging = req.query.enableDetailedLogging === "true";
   const detailedLoggingLimit = parseInt(req.query.detailedLoggingLimit as string) || 0;
+  const accountsParam = typeof req.query.accounts === "string" ? req.query.accounts : "";
+  const selectedAccounts = accountsParam
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const scrapeId =
+    typeof req.query.scrapeId === "string" && req.query.scrapeId.trim().length > 0
+      ? req.query.scrapeId.trim()
+      : randomUUID();
+  const abortController = new AbortController();
+  activeScrapes.set(scrapeId, abortController);
+  let connectionClosed = false;
+
+  req.on("close", () => {
+    connectionClosed = true;
+    abortController.abort();
+    activeScrapes.delete(scrapeId);
+  });
 
   // Set up SSE
   res.setHeader("Content-Type", "text/event-stream");
@@ -38,6 +57,7 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   function sendEvent(data: Record<string, unknown>) {
+    if (connectionClosed || res.writableEnded || res.destroyed) return;
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   }
 
@@ -49,22 +69,49 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
       sendEvent({ type: "warning", message: warning });
     }
 
-    const enabledAccounts = config.accounts.filter((a) => a.enabled);
+    const missingAccounts = selectedAccounts.filter(
+      (name) => !config.accounts.some((account) => account.name === name)
+    );
+    if (missingAccounts.length > 0) {
+      sendEvent({ type: "error", message: `Unknown accounts: ${missingAccounts.join(", ")}` });
+      res.end();
+      return;
+    }
+
+    const filteredAccounts =
+      selectedAccounts.length > 0
+        ? config.accounts.filter((a) => selectedAccounts.includes(a.name))
+        : config.accounts;
+
+    const enabledAccounts = filteredAccounts.filter((a) => a.enabled);
     if (enabledAccounts.length === 0) {
-      sendEvent({ type: "error", message: "No accounts have credentials configured." });
+      sendEvent({
+        type: "error",
+        message:
+          selectedAccounts.length > 0
+            ? "Selected accounts are not configured."
+            : "No accounts have credentials configured.",
+      });
       res.end();
       return;
     }
 
     // Scrape with progress callbacks
     const results = await scrapeAllAccounts(
-      config.accounts,
+      filteredAccounts,
       config.startDate,
       config.showBrowser,
       (message: string) => {
         sendEvent({ type: "progress", message });
-      }
+      },
+      abortController.signal
     );
+
+    if (abortController.signal.aborted) {
+      sendEvent({ type: "error", message: "Scrape canceled." });
+      res.end();
+      return;
+    }
 
     // Send per-account results
     for (const result of results) {
@@ -145,9 +192,34 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     sendEvent({ type: "error", message });
+  } finally {
+    activeScrapes.delete(scrapeId);
   }
 
   res.end();
+});
+
+/**
+ * POST /api/scrape/cancel
+ * Cancels an in-progress scrape by ID.
+ */
+router.post("/scrape/cancel", (req: Request, res: Response) => {
+  const { scrapeId } = req.body as { scrapeId?: string };
+
+  if (!scrapeId) {
+    res.status(400).json({ error: "Missing scrapeId" });
+    return;
+  }
+
+  const controller = activeScrapes.get(scrapeId);
+  if (!controller) {
+    res.status(404).json({ error: "Scrape not found" });
+    return;
+  }
+
+  controller.abort();
+  activeScrapes.delete(scrapeId);
+  res.json({ success: true });
 });
 
 /**
