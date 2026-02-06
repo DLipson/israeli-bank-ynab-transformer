@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit",
     "dev:server": "tsx src/server/index.ts",
     "dev:gui": "cd gui && npm run dev",
-    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:gui\""
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:gui\"",
+    "dev:all:with-scrapers": "concurrently \"npm run dev:server\" \"npm run dev:gui\" \"npm --prefix ../israeli-bank-scrapers run watch\""
   },
   "dependencies": {
     "commander": "^12.1.0",
