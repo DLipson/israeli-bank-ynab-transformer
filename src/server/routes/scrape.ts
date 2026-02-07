@@ -124,12 +124,8 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
       });
     }
 
-    // Create audit logger and record raw scraper results if detailed logging is enabled
+    // Create audit logger (transformations will be logged if detailed logging is enabled)
     const auditLogger = createAuditLogger();
-
-    if (enableDetailedLogging) {
-      auditLogger.recordRawScrapeResults(results, detailedLoggingLimit);
-    }
 
     // Process results
     const allRawTransactions: EnrichedTransaction[] = [];

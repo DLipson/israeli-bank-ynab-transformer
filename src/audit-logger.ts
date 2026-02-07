@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { EnrichedTransaction, YnabRow } from "./transformer.js";
-import type { ScrapeResult } from "./scraper.js";
 
 export interface SkippedTransaction {
   reason: string;
@@ -26,7 +25,6 @@ export interface AuditLog {
   totalInflow: number;
   checksum: string | null;
   // Detailed logging (optional)
-  rawScraperResults?: any[];
   transformationDetails?: Array<{ raw: EnrichedTransaction; transformed: YnabRow }>;
   detailedLoggingLimit?: number;
 }
@@ -64,18 +62,6 @@ export function createAuditLogger() {
           totalInflow: inflow,
         });
       }
-    },
-
-    recordRawScrapeResults(results: ScrapeResult[], limit: number = 0) {
-      // Store the raw scraper results for detailed logging
-      // If limit is 0, store all; otherwise store only the first 'limit' transactions from each account
-      log.detailedLoggingLimit = limit;
-      log.rawScraperResults = results.map((result) => ({
-        accountName: result.accountName,
-        success: result.success,
-        error: result.error,
-        transactions: limit > 0 ? result.transactions.slice(0, limit) : result.transactions,
-      }));
     },
 
     recordSkipped(txn: EnrichedTransaction, reason: string) {
@@ -167,36 +153,9 @@ export function formatAuditLog(log: AuditLog): string {
     lines.push("Output: (none - dry run or no transactions)");
   }
 
-  // Detailed logging sections
-  if (log.rawScraperResults && log.rawScraperResults.length > 0) {
+  if (log.transformationDetails && log.transformationDetails.length > 0) {
     lines.push("");
     lines.push("=== DETAILED LOGGING ===");
-    lines.push("");
-    lines.push("Raw Scraper Results:");
-    if (log.detailedLoggingLimit && log.detailedLoggingLimit > 0) {
-      lines.push(`  (Showing first ${log.detailedLoggingLimit} transaction(s) per account)`);
-    } else {
-      lines.push(`  (Showing all transactions)`);
-    }
-    lines.push("");
-
-    for (const result of log.rawScraperResults) {
-      lines.push(`Account: ${result.accountName}`);
-      lines.push(`  Success: ${result.success}`);
-      if (result.error) {
-        lines.push(`  Error: ${result.error}`);
-      }
-      lines.push(`  Transactions (${result.transactions.length}):`);
-
-      for (let i = 0; i < result.transactions.length; i++) {
-        const txn = result.transactions[i];
-        lines.push(`    [${i + 1}] ${JSON.stringify(txn, null, 2).split("\n").join("\n    ")}`);
-      }
-      lines.push("");
-    }
-  }
-
-  if (log.transformationDetails && log.transformationDetails.length > 0) {
     lines.push("");
     lines.push("Transformation Details:");
     if (log.detailedLoggingLimit && log.detailedLoggingLimit > 0) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createAuditLogger } from "./audit-logger.js";
+import { createAuditLogger, formatAuditLog } from "./audit-logger.js";
 import type { ScrapeResult } from "./scraper.js";
 import type { EnrichedTransaction, YnabRow } from "./transformer.js";
 
@@ -103,6 +103,37 @@ describe("createAuditLogger", () => {
     const log = logger.getLog();
 
     expect(log.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("omits raw scraper results from formatted audit logs", () => {
+    const logger = createAuditLogger();
+    const log = logger.getLog() as any;
+
+    log.rawScraperResults = [
+      {
+        accountName: "Max",
+        success: true,
+        transactions: [makeTxn(-25)],
+      },
+    ];
+
+    log.transformationDetails = [
+      {
+        raw: makeTxn(-25),
+        transformed: {
+          date: "2024-03-15",
+          payee: "Store",
+          memo: "",
+          outflow: "25.00",
+          inflow: "",
+        },
+      },
+    ];
+
+    const formatted = formatAuditLog(log);
+
+    expect(formatted).toContain("Transformation Details:");
+    expect(formatted).not.toContain("Raw Scraper Results:");
   });
 });
 
