@@ -20,6 +20,15 @@ import {
 
 type Phase = "settings" | "progress" | "results";
 type ExportResult = { csvPaths: string[]; auditLogPath: string };
+type StoredSettings = {
+  daysBack: number;
+  outputDir: string;
+  split: boolean;
+  showBrowser: boolean;
+  enableDetailedLogging: boolean;
+  detailedLoggingLimit: number;
+  selectedAccounts: string[];
+};
 
 const STORAGE_KEYS = {
   settings: "scrape.settings.v1",
@@ -49,74 +58,60 @@ function removeStored(key: string): void {
 }
 
 export function ScrapePage() {
-  const [phase, setPhase] = useState<Phase>("settings");
+  const initialRef = useRef<{
+    settings: Partial<StoredSettings>;
+    payload: ScrapePayload | null;
+    exportResult: ExportResult | null;
+  } | null>(null);
+  if (!initialRef.current) {
+    initialRef.current = {
+      settings: readStoredJson<Partial<StoredSettings>>(STORAGE_KEYS.settings, {}),
+      payload: readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null),
+      exportResult: readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null),
+    };
+  }
+  const initialSettings = initialRef.current.settings;
+
+  const [phase, setPhase] = useState<Phase>(() =>
+    initialRef.current?.payload ? "results" : "settings"
+  );
 
   // Settings state
-  const [daysBack, setDaysBack] = useState(60);
-  const [outputDir, setOutputDir] = useState("./output");
-  const [split, setSplit] = useState(false);
-  const [showBrowser, setShowBrowser] = useState(false);
-  const [enableDetailedLogging, setEnableDetailedLogging] = useState(false);
-  const [detailedLoggingLimit, setDetailedLoggingLimit] = useState(10);
+  const [daysBack, setDaysBack] = useState(() => initialSettings.daysBack ?? 60);
+  const [outputDir, setOutputDir] = useState(() => initialSettings.outputDir ?? "./output");
+  const [split, setSplit] = useState(() => initialSettings.split ?? false);
+  const [showBrowser, setShowBrowser] = useState(() => initialSettings.showBrowser ?? false);
+  const [enableDetailedLogging, setEnableDetailedLogging] = useState(
+    () => initialSettings.enableDetailedLogging ?? false
+  );
+  const [detailedLoggingLimit, setDetailedLoggingLimit] = useState(
+    () => initialSettings.detailedLoggingLimit ?? 10
+  );
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState("");
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(
+    () => initialSettings.selectedAccounts ?? []
+  );
 
   // Progress state
   const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
 
   // Results state
-  const [payload, setPayload] = useState<ScrapePayload | null>(null);
+  const [payload, setPayload] = useState<ScrapePayload | null>(
+    () => initialRef.current?.payload ?? null
+  );
   const [exporting, setExporting] = useState(false);
   const [openingOutput, setOpeningOutput] = useState(false);
-  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(
+    () => initialRef.current?.exportResult ?? null
+  );
   const [error, setError] = useState("");
   const [logsCollapsed, setLogsCollapsed] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const streamRef = useRef<EventSource | null>(null);
   const scrapeIdRef = useRef<string | null>(null);
-  const didLoadRef = useRef(false);
-
-  useEffect(() => {
-    const storedSettings = readStoredJson<Partial<{
-      daysBack: number;
-      outputDir: string;
-      split: boolean;
-      showBrowser: boolean;
-      enableDetailedLogging: boolean;
-      detailedLoggingLimit: number;
-      selectedAccounts: string[];
-    }>>(STORAGE_KEYS.settings, {});
-
-    if (storedSettings.daysBack !== undefined) setDaysBack(storedSettings.daysBack);
-    if (storedSettings.outputDir !== undefined) setOutputDir(storedSettings.outputDir);
-    if (storedSettings.split !== undefined) setSplit(storedSettings.split);
-    if (storedSettings.showBrowser !== undefined) setShowBrowser(storedSettings.showBrowser);
-    if (storedSettings.enableDetailedLogging !== undefined) {
-      setEnableDetailedLogging(storedSettings.enableDetailedLogging);
-    }
-    if (storedSettings.detailedLoggingLimit !== undefined) {
-      setDetailedLoggingLimit(storedSettings.detailedLoggingLimit);
-    }
-    if (Array.isArray(storedSettings.selectedAccounts)) {
-      setSelectedAccounts(storedSettings.selectedAccounts);
-    }
-
-    const storedPayload = readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null);
-    if (storedPayload) {
-      setPayload(storedPayload);
-      setPhase("results");
-    }
-
-    const storedExportResult = readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null);
-    if (storedExportResult) {
-      setExportResult(storedExportResult);
-    }
-
-    didLoadRef.current = true;
-  }, []);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -145,7 +140,6 @@ export function ScrapePage() {
   }, []);
 
   useEffect(() => {
-    if (!didLoadRef.current) return;
     writeStoredJson(STORAGE_KEYS.settings, {
       daysBack,
       outputDir,
@@ -166,7 +160,6 @@ export function ScrapePage() {
   ]);
 
   useEffect(() => {
-    if (!didLoadRef.current) return;
     if (payload) {
       writeStoredJson(STORAGE_KEYS.payload, payload);
     } else {
@@ -175,7 +168,6 @@ export function ScrapePage() {
   }, [payload]);
 
   useEffect(() => {
-    if (!didLoadRef.current) return;
     if (exportResult) {
       writeStoredJson(STORAGE_KEYS.exportResult, exportResult);
     } else {
