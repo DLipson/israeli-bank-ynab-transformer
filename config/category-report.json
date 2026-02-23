@@ -1,0 +1,17 @@
+{
+  "budgetId": "YOUR_YNAB_BUDGET_ID",
+  "timezone": "Asia/Jerusalem",
+  "currency": "ILS",
+  "locale": "en-IL",
+  "yellowThreshold": 200,
+  "categories": [
+    {
+      "id": "CATEGORY_ID_1",
+      "label": "Groceries"
+    },
+    {
+      "id": "CATEGORY_ID_2",
+      "label": "Fuel"
+    }
+  ]
+}

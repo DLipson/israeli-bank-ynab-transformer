@@ -2,6 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { ScrapePage } from "@/pages/ScrapePage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
+import { ReportPage } from "@/pages/ReportPage";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="scrape">Scrape</TabsTrigger>
           <TabsTrigger value="reconcile">Reconcile</TabsTrigger>
+          <TabsTrigger value="report">Report</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts">
@@ -25,6 +27,10 @@ export default function App() {
 
         <TabsContent value="reconcile">
           <ReconcilePage />
+        </TabsContent>
+
+        <TabsContent value="report">
+          <ReportPage />
         </TabsContent>
       </Tabs>
     </div>

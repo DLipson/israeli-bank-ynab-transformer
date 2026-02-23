@@ -21,18 +21,22 @@
     "dev:server": "tsx src/server/index.ts",
     "dev:gui": "cd gui && npm run dev",
     "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:gui\"",
-    "dev:all:with-scrapers": "npm --prefix ../israeli-bank-scrapers run build:js && npm --prefix ../israeli-bank-scrapers run build:types && concurrently \"npm run dev:server\" \"npm run dev:gui\" \"npm --prefix ../israeli-bank-scrapers run watch\""
+    "dev:all:with-scrapers": "npm --prefix ../israeli-bank-scrapers run build:js && npm --prefix ../israeli-bank-scrapers run build:types && concurrently \"npm run dev:server\" \"npm run dev:gui\" \"npm --prefix ../israeli-bank-scrapers run watch\"",
+    "report:send-daily": "tsx src/ynab/send-daily-report-email.ts",
+    "report:send-now": "tsx src/ynab/send-daily-report-email.ts --force"
   },
   "dependencies": {
     "commander": "^12.1.0",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
-    "israeli-bank-scrapers": "file:../israeli-bank-scrapers"
+    "israeli-bank-scrapers": "file:../israeli-bank-scrapers",
+    "nodemailer": "^8.0.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/nodemailer": "^7.0.10",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

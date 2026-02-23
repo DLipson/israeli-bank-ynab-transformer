@@ -84,6 +84,48 @@ export interface NormalizedTransaction {
   source: string;
 }
 
+export type ReportStatus = "red" | "yellow" | "green";
+
+export interface CategoryAvailabilityRow {
+  id: string;
+  name: string;
+  groupName: string;
+  availableMilliunits: number;
+  available: string;
+  status: ReportStatus;
+}
+
+export interface CategoryAvailabilityReport {
+  budgetId: string;
+  timezone: string;
+  currency: string;
+  generatedAtIso: string;
+  generatedAtLocal: string;
+  rows: CategoryAvailabilityRow[];
+  totals: {
+    red: number;
+    yellow: number;
+    green: number;
+    count: number;
+  };
+}
+
+export interface CategoryReportPreviewResponse {
+  report: CategoryAvailabilityReport;
+  html: string;
+}
+
+export interface SendTestCategoryReportEmailResponse {
+  recipientEmail: string;
+  subject: string;
+  totals: {
+    red: number;
+    yellow: number;
+    green: number;
+    count: number;
+  };
+}
+
 // --- Accounts ---
 
 export async function getAccounts(): Promise<AccountInfo[]> {
@@ -225,6 +267,34 @@ export async function reconcile(body: {
   if (!res.ok) {
     const data = await res.json();
     throw new Error(data.error || "Reconcile failed");
+  }
+  return res.json();
+}
+
+// --- Category Report ---
+
+export async function previewCategoryReport(): Promise<CategoryReportPreviewResponse> {
+  const res = await fetch(`${BASE}/report/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || "Report preview failed");
+  }
+  return res.json();
+}
+
+export async function sendTestCategoryReportEmail(): Promise<SendTestCategoryReportEmailResponse> {
+  const res = await fetch(`${BASE}/report/send-test-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || "Failed to send test email");
   }
   return res.json();
 }
