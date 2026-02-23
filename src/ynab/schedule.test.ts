@@ -11,6 +11,18 @@ describe("getLocalHour", () => {
     const hour = getLocalHour(new Date("2026-06-17T04:00:00.000Z"), "Asia/Jerusalem");
     expect(hour).toBe(7);
   });
+
+  it("normalizes midnight hour value 24 to 0", () => {
+    const hour = getLocalHour(
+      new Date("2026-06-17T21:00:00.000Z"),
+      "Asia/Jerusalem",
+      () =>
+        ({
+          formatToParts: () => [{ type: "hour", value: "24" }],
+        }) as Intl.DateTimeFormat
+    );
+    expect(hour).toBe(0);
+  });
 });
 
 describe("shouldRunAtLocalHour", () => {

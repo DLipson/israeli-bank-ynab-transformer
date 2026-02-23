@@ -64,7 +64,7 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
 
   try {
     // Rehydrate env from credential storage in case credentials changed since server startup.
-    loadAppEnv();
+    loadAppEnv({ override: true });
 
     // Load config
     const config = loadConfig({ daysBack, showBrowser });

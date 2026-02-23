@@ -15,7 +15,7 @@ function getEnvPath(): string {
 }
 
 function reloadEnv(): void {
-  loadAppEnv();
+  loadAppEnv({ override: true });
 }
 
 function getCredentialSourceEnvVars(): Record<string, string> {

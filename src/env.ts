@@ -7,6 +7,10 @@ import { hydrateEnvWithStoredBankCredentials } from "./windows-credential-manage
 const APP_CONFIG_DIR_NAME = "israeli-bank-ynab-transformer";
 const CONFIG_DIR_OVERRIDE_ENV = "ISRAELI_BANK_YNAB_CONFIG_DIR";
 
+export interface LoadAppEnvOptions {
+  override?: boolean;
+}
+
 export function getAppConfigDir(): string {
   const override = process.env[CONFIG_DIR_OVERRIDE_ENV]?.trim();
   if (override) {
@@ -31,13 +35,13 @@ export function ensureAppConfigDirExists(): string {
   return dir;
 }
 
-export function loadAppEnv(): string {
+export function loadAppEnv(options: LoadAppEnvOptions = {}): string {
   const envPath = getEnvFilePath();
 
   // Load stored bank credentials before dotenv so .env stays a fallback for missing values.
   hydrateEnvWithStoredBankCredentials();
 
-  const result = dotenv.config({ path: envPath });
+  const result = dotenv.config({ path: envPath, override: options.override ?? false });
   if (result.error) {
     const error = result.error as NodeJS.ErrnoException;
     if (error.code !== "ENOENT") {

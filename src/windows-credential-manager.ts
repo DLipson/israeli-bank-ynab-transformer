@@ -41,9 +41,6 @@ export function hydrateEnvWithStoredBankCredentials(): void {
     const byTarget = raw ? (JSON.parse(raw) as Record<string, string>) : {};
 
     for (const envVar of envVars) {
-      if (process.env[envVar]?.trim()) {
-        continue;
-      }
       const value = (byTarget[toTarget(envVar)] ?? "").trim();
       if (value) {
         process.env[envVar] = value;

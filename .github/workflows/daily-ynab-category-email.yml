@@ -30,6 +30,9 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Checkout scraper dependency
+        run: git clone https://github.com/eshaham/israeli-bank-scrapers.git ../israeli-bank-scrapers
+
       - name: Install dependencies
         run: npm ci
 
