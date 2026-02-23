@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import dotenv from "dotenv";
+import { hydrateEnvWithStoredBankCredentials } from "./windows-credential-manager.js";
 
 const APP_CONFIG_DIR_NAME = "israeli-bank-ynab-transformer";
 const CONFIG_DIR_OVERRIDE_ENV = "ISRAELI_BANK_YNAB_CONFIG_DIR";
@@ -32,6 +33,9 @@ export function ensureAppConfigDirExists(): string {
 
 export function loadAppEnv(): string {
   const envPath = getEnvFilePath();
+
+  // Load stored bank credentials before dotenv so .env stays a fallback for missing values.
+  hydrateEnvWithStoredBankCredentials();
 
   const result = dotenv.config({ path: envPath });
   if (result.error) {

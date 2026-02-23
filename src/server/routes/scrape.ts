@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { loadConfig } from "../../config.js";
+import { loadAppEnv } from "../../env.js";
 import { scrapeAllAccounts } from "../../scraper.js";
 import {
   filterAndPartition,
@@ -62,6 +63,9 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
   }
 
   try {
+    // Rehydrate env from credential storage in case credentials changed since server startup.
+    loadAppEnv();
+
     // Load config
     const config = loadConfig({ daysBack, showBrowser });
 
