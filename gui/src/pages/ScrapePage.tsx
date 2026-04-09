@@ -29,12 +29,52 @@ type StoredSettings = {
   detailedLoggingLimit: number;
   selectedAccounts: string[];
 };
+type StoredLastScrape = string | null;
 
 const STORAGE_KEYS = {
   settings: "scrape.settings.v1",
   payload: "scrape.payload.v1",
   exportResult: "scrape.exportResult.v1",
+  lastScrapeAt: "scrape.lastRun.v1",
 };
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function parseDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function extractLastScrapeAt(payload: ScrapePayload | null): string | null {
+  if (!payload) return null;
+  const auditLog = payload.auditLog as { timestamp?: string } | undefined;
+  if (!auditLog?.timestamp) return null;
+  return auditLog.timestamp;
+}
+
+function calculateDaysBack(lastScrapeAt: string | null): number | null {
+  const lastScrapeDate = parseDate(lastScrapeAt);
+  if (!lastScrapeDate) return null;
+  const target = startOfDay(lastScrapeDate);
+  target.setDate(target.getDate() - 1);
+  const today = startOfDay(new Date());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / MS_PER_DAY);
+  return Math.max(1, diffDays);
+}
 
 function readStoredJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -62,12 +102,16 @@ export function ScrapePage() {
     settings: Partial<StoredSettings>;
     payload: ScrapePayload | null;
     exportResult: ExportResult | null;
+    lastScrapeAt: StoredLastScrape;
   } | null>(null);
   if (!initialRef.current) {
+    const storedPayload = readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null);
+    const storedLastScrapeAt = readStoredJson<StoredLastScrape>(STORAGE_KEYS.lastScrapeAt, null);
     initialRef.current = {
       settings: readStoredJson<Partial<StoredSettings>>(STORAGE_KEYS.settings, {}),
-      payload: readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null),
+      payload: storedPayload,
       exportResult: readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null),
+      lastScrapeAt: storedLastScrapeAt ?? extractLastScrapeAt(storedPayload),
     };
   }
   const initialSettings = initialRef.current.settings;
@@ -107,6 +151,10 @@ export function ScrapePage() {
   const [exportResult, setExportResult] = useState<ExportResult | null>(
     () => initialRef.current?.exportResult ?? null
   );
+  const [lastScrapeAt, setLastScrapeAt] = useState<StoredLastScrape>(
+    () => initialRef.current?.lastScrapeAt ?? null
+  );
+  const lastScrapeDate = parseDate(lastScrapeAt);
   const [error, setError] = useState("");
   const [logsCollapsed, setLogsCollapsed] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -174,6 +222,14 @@ export function ScrapePage() {
       removeStored(STORAGE_KEYS.exportResult);
     }
   }, [exportResult]);
+
+  useEffect(() => {
+    if (lastScrapeAt) {
+      writeStoredJson(STORAGE_KEYS.lastScrapeAt, lastScrapeAt);
+    } else {
+      removeStored(STORAGE_KEYS.lastScrapeAt);
+    }
+  }, [lastScrapeAt]);
 
   useEffect(() => {
     if (accountsLoading) return;
@@ -274,6 +330,10 @@ export function ScrapePage() {
           case "done":
             if (event.payload) {
               setPayload(event.payload);
+              const nextLastScrapeAt = extractLastScrapeAt(event.payload);
+              if (nextLastScrapeAt) {
+                setLastScrapeAt(nextLastScrapeAt);
+              }
             }
             setPhase("results");
             break;
@@ -316,6 +376,10 @@ export function ScrapePage() {
   };
 
   const handleReset = () => {
+    const nextDaysBack = calculateDaysBack(lastScrapeAt);
+    if (nextDaysBack) {
+      setDaysBack(nextDaysBack);
+    }
     setPhase("settings");
     setPayload(null);
     setExportResult(null);
@@ -383,6 +447,11 @@ export function ScrapePage() {
         <Card>
           <CardHeader>
             <CardTitle>Scrape Settings</CardTitle>
+            {lastScrapeDate && (
+              <p className="text-xs text-muted-foreground">
+                Last scraped: {formatLocalDate(lastScrapeDate)}
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <ScrapeSettings
