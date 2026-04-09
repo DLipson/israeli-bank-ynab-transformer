@@ -66,4 +66,44 @@ describe("ScrapePage settings persistence", () => {
       expect(stored.daysBack).toBe(21);
     });
   });
+
+  it("shows last scrape date on the settings view", async () => {
+    localStorage.setItem(
+      "scrape.lastRun.v1",
+      JSON.stringify("2026-04-08T12:00:00.000Z")
+    );
+
+    render(<ScrapePage />);
+
+    expect(await screen.findByText("Last scraped: 2026-04-08")).toBeInTheDocument();
+  });
+
+  it("defaults days back to one day before the last scrape date on reset", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-09T12:00:00.000Z"));
+
+    try {
+      localStorage.setItem(
+        "scrape.payload.v1",
+        JSON.stringify({
+          scrapeResults: [],
+          kept: [],
+          skipped: [],
+          rows: [],
+          summary: { byAccount: {}, totalOutflow: 0, totalInflow: 0 },
+          auditLog: { timestamp: "2026-04-08T08:00:00.000Z" },
+        })
+      );
+
+      render(<ScrapePage />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "Scrape Again" }));
+
+      expect((await screen.findByLabelText("Days Back") as HTMLInputElement).value).toBe(
+        "2"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
