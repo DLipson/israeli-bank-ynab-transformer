@@ -1,6 +1,6 @@
 import { CompanyTypes } from "israeli-bank-scrapers";
-import "dotenv/config";
 import { BANK_DEFINITIONS, type BankDefinition } from "./banks.js";
+import { getEnvFilePath } from "./env.js";
 
 export interface AccountConfig {
   name: string;
@@ -103,7 +103,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   const enabledCount = accounts.filter((a) => a.enabled).length;
   if (enabledCount === 0) {
     warnings.push(
-      "Warning: No accounts have credentials configured. Copy .env.example to .env and fill in your credentials."
+      `Warning: No accounts have credentials configured. Add credentials in the GUI Accounts tab or set them in ${getEnvFilePath()}.`
     );
   }
 

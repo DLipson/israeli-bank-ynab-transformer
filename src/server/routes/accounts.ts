@@ -1,19 +1,35 @@
 import { Router } from "express";
-import { join } from "node:path";
 import { BANK_DEFINITIONS } from "../../banks.js";
 import { readEnvFile, writeEnvFile, clearEnvVars } from "../env-io.js";
+import { ensureAppConfigDirExists, getEnvFilePath, loadAppEnv } from "../../env.js";
+import {
+  deleteBankCredentialsFromWindowsCredentialManager,
+  isWindowsCredentialManagerAvailable,
+  saveBankCredentialsToWindowsCredentialManager,
+} from "../../windows-credential-manager.js";
 
 const router = Router();
 
 function getEnvPath(): string {
-  return join(process.cwd(), ".env");
+  return getEnvFilePath();
 }
 
 function reloadEnv(): void {
-  const vars = readEnvFile(getEnvPath());
-  for (const [key, value] of Object.entries(vars)) {
-    process.env[key] = value;
+  loadAppEnv({ override: true });
+}
+
+function getCredentialSourceEnvVars(): Record<string, string> {
+  if (!isWindowsCredentialManagerAvailable()) {
+    return readEnvFile(getEnvPath());
   }
+
+  const vars: Record<string, string> = {};
+  for (const bank of BANK_DEFINITIONS) {
+    for (const envVar of Object.values(bank.credentialFields)) {
+      vars[envVar] = process.env[envVar] ?? "";
+    }
+  }
+  return vars;
 }
 
 /**
@@ -22,8 +38,9 @@ function reloadEnv(): void {
  * Never sends credential values.
  */
 router.get("/", (_req, res) => {
-  const envPath = getEnvPath();
-  const envVars = readEnvFile(envPath);
+  // Refresh from credential storage so UI reflects external changes without a server restart.
+  reloadEnv();
+  const envVars = getCredentialSourceEnvVars();
 
   const accounts = BANK_DEFINITIONS.map((bank) => {
     const fields = Object.keys(bank.credentialFields);
@@ -43,7 +60,7 @@ router.get("/", (_req, res) => {
 
 /**
  * PUT /api/accounts/:name/credentials
- * Saves credentials for a bank to the .env file.
+ * Saves credentials for a bank to the app env file in ~/.config.
  */
 router.put("/:name/credentials", (req, res) => {
   const { name } = req.params;
@@ -71,15 +88,29 @@ router.put("/:name/credentials", (req, res) => {
     updates[envVar] = value;
   }
 
-  writeEnvFile(getEnvPath(), updates);
-  reloadEnv();
+  try {
+    if (isWindowsCredentialManagerAvailable()) {
+      saveBankCredentialsToWindowsCredentialManager(updates);
+      ensureAppConfigDirExists();
+      clearEnvVars(getEnvPath(), Object.keys(updates));
+    } else {
+      ensureAppConfigDirExists();
+      writeEnvFile(getEnvPath(), updates);
+    }
+
+    reloadEnv();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+    return;
+  }
 
   res.json({ success: true });
 });
 
 /**
  * DELETE /api/accounts/:name/credentials
- * Clears credentials for a bank from the .env file.
+ * Clears credentials for a bank from the app env file in ~/.config.
  */
 router.delete("/:name/credentials", (req, res) => {
   const { name } = req.params;
@@ -91,12 +122,25 @@ router.delete("/:name/credentials", (req, res) => {
   }
 
   const envKeys = Object.values(bank.credentialFields);
-  clearEnvVars(getEnvPath(), envKeys);
-  reloadEnv();
 
-  // Also clear from process.env
-  for (const key of envKeys) {
-    delete process.env[key];
+  try {
+    if (isWindowsCredentialManagerAvailable()) {
+      deleteBankCredentialsFromWindowsCredentialManager(envKeys);
+    }
+
+    ensureAppConfigDirExists();
+    clearEnvVars(getEnvPath(), envKeys);
+
+    // Clear from in-memory env before reload.
+    for (const key of envKeys) {
+      delete process.env[key];
+    }
+
+    reloadEnv();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+    return;
   }
 
   res.json({ success: true });

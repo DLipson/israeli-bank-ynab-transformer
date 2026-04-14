@@ -8,6 +8,9 @@ import { transformTransactions, filterAndPartition, groupByAccount, calculateSum
 import { toCSV, generateFilename } from "./csv-writer.js";
 import { createAuditLogger } from "./audit-logger.js";
 import { reconcile, formatReconcileReport } from "./reconcile.js";
+import { getEnvFilePath, loadAppEnv } from "./env.js";
+
+loadAppEnv();
 
 program
   .name("israeli-bank-ynab")
@@ -144,7 +147,8 @@ program
       const status = account.enabled ? "enabled" : "disabled (missing credentials)";
       console.log(`  ${account.name}: ${status}`);
     }
-    console.log("\nTo enable accounts, add credentials to .env file.");
+    console.log("\nTo enable accounts, add credentials in the GUI Accounts tab.");
+    console.log(`Or set credentials manually in: ${getEnvFilePath()}`);
   });
 
 program.action(() => {

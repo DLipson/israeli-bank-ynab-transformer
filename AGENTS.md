@@ -6,7 +6,7 @@
 - `src/**/*.test.ts`: Vitest unit tests.
 - `gui/`: Vite + React frontend (separate `package.json`, tests, and configs).
 - `output/` and `logs/`: Generated CSVs and runtime logs.
-- `.env` / `.env.example`: Runtime configuration templates.
+- `~/.config/israeli-bank-ynab-transformer/.env` and `.env.example`: Runtime configuration (file location + template).
 
 ## Build, Test, and Development Commands
 - `npm run dev`: Run CLI locally via `tsx`.
@@ -37,5 +37,5 @@
 - Link related issues or TODOs when applicable.
 
 ## Configuration & Security Tips
-- Create `.env` from `.env.example` if you don’t already have one, and keep secrets out of source control.
+- Create `~/.config/israeli-bank-ynab-transformer/.env` from `.env.example` if you don’t already have one, and keep secrets out of source control.
 - The scraper dependency expects a sibling repo at `../israeli-bank-scrapers` for some workflows.

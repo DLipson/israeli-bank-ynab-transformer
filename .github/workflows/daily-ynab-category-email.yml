@@ -1,0 +1,45 @@
+name: Daily YNAB Category Email
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ynab-category-email
+  cancel-in-progress: false
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+    env:
+      YNAB_API_TOKEN: ${{ secrets.YNAB_API_TOKEN }}
+      YNAB_REPORT_RECIPIENT_EMAIL: ${{ secrets.YNAB_REPORT_RECIPIENT_EMAIL }}
+      GMAIL_SMTP_USER: ${{ secrets.GMAIL_SMTP_USER }}
+      GMAIL_SMTP_APP_PASSWORD: ${{ secrets.GMAIL_SMTP_APP_PASSWORD }}
+      YNAB_CATEGORY_REPORT_CONFIG: ./config/category-report.json
+      YNAB_REPORT_TIMEZONE: Asia/Jerusalem
+      YNAB_REPORT_SEND_HOUR: "7"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Checkout scraper dependency
+        run: git clone https://github.com/eshaham/israeli-bank-scrapers.git ../israeli-bank-scrapers
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send scheduled email
+        if: github.event_name == 'schedule'
+        run: npm run report:send-daily
+
+      - name: Send manual email now
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run report:send-now
