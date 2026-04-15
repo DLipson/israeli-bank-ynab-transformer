@@ -140,6 +140,20 @@ GUI features:
 - Export CSV + open output folder
 - Reconcile CSVs in the UI
 
+## One-Click / One-Command (Windows)
+
+Run this once to install deps and launch the GUI in your browser:
+
+```powershell
+.\run-ibyt.ps1
+```
+
+When you are actively editing the scrapers repo, use:
+
+```powershell
+.\run-ibyt.ps1 -WithScrapers
+```
+
 ## CLI Usage
 
 Entry point: `src/index.ts`  
