@@ -165,6 +165,20 @@ GUI features:
 - Preview category availability report in the UI
 - Send test category-availability email from the Report tab
 
+## One-Click / One-Command (Windows)
+
+Run this once to install deps and launch the GUI in your browser:
+
+```powershell
+.\run-ibyt.ps1
+```
+
+When you are actively editing the scrapers repo, use:
+
+```powershell
+.\run-ibyt.ps1 -WithScrapers
+```
+
 ## CLI Usage
 
 Entry point: `src/index.ts`  
