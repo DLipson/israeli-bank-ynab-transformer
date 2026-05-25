@@ -77,11 +77,18 @@ router.put("/:name/credentials", (req, res) => {
     return;
   }
 
-  // Map credential field names to env var names
+  reloadEnv();
+  const existingEnvVars = getCredentialSourceEnvVars();
+
   const updates: Record<string, string> = {};
   for (const [field, envVar] of Object.entries(bank.credentialFields)) {
     const value = credentials[field];
+    const hasExistingValue = (existingEnvVars[envVar] ?? "").length > 0;
+
     if (value === undefined || value === "") {
+      if (hasExistingValue) {
+        continue;
+      }
       res.status(400).json({ error: `Missing required field: ${field}` });
       return;
     }
