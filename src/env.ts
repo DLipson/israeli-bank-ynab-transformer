@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import dotenv from "dotenv";
@@ -41,12 +41,22 @@ export function loadAppEnv(options: LoadAppEnvOptions = {}): string {
   // Load stored bank credentials before dotenv so .env stays a fallback for missing values.
   hydrateEnvWithStoredBankCredentials();
 
-  const result = dotenv.config({ path: envPath, override: options.override ?? false });
-  if (result.error) {
-    const error = result.error as NodeJS.ErrnoException;
-    if (error.code !== "ENOENT") {
-      throw result.error;
+  if (existsSync(envPath)) {
+    const parsed = dotenv.parse(readFileSync(envPath, "utf-8"));
+    const override = options.override ?? false;
+
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!override && process.env[key] !== undefined) {
+        continue;
+      }
+
+      if (override && value === "" && process.env[key]) {
+        continue;
+      }
+
+      process.env[key] = value;
     }
   }
+
   return envPath;
 }

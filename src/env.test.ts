@@ -55,4 +55,18 @@ describe("env paths", () => {
 
     expect(process.env[TEST_KEY]).toBe("loaded");
   });
+
+  it("does not overwrite an existing non-empty env value with an empty value from the env file", () => {
+    const dir = createTempConfigDir();
+    process.env[OVERRIDE_ENV] = join(dir, "config");
+
+    const configDir = ensureAppConfigDirExists();
+    const envPath = join(configDir, ".env");
+    writeFileSync(envPath, `${TEST_KEY}=\n`, "utf-8");
+    process.env[TEST_KEY] = "from-credential-manager";
+
+    loadAppEnv({ override: true });
+
+    expect(process.env[TEST_KEY]).toBe("from-credential-manager");
+  });
 });
