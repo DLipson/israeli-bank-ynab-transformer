@@ -1,4 +1,4 @@
-import { createScraper, type ScraperOptions } from "israeli-bank-scrapers";
+import type { CompanyTypes, ScraperOptions } from "israeli-bank-scrapers";
 import type { AccountConfig } from "./config.js";
 import type { EnrichedTransaction } from "./transformer.js";
 
@@ -20,8 +20,9 @@ export async function scrapeAccount(
 ): Promise<ScrapeResult> {
   onProgress?.(`\nScraping ${account.name}...`);
 
+  const scraperModule = await import("israeli-bank-scrapers");
   const options: ScraperOptions = {
-    companyId: account.companyId,
+    companyId: account.companyId as CompanyTypes,
     startDate,
     combineInstallments: false, // Keep installments separate for proper YNAB handling
     showBrowser,
@@ -29,7 +30,7 @@ export async function scrapeAccount(
   };
 
   try {
-    const scraper = createScraper(options);
+    const scraper = scraperModule.createScraper(options);
 
     // Set up progress logging
     scraper.onProgress((companyId, payload) => {

@@ -1,14 +1,24 @@
-import { CompanyTypes } from "israeli-bank-scrapers";
-
 /**
  * Bank definition with credential field mappings.
  * To add a new bank:
  * 1. Add entry here with companyId and credential fields
  * 2. Add corresponding env vars to .env.example
  */
+export type BankCompanyId =
+  | "leumi"
+  | "hapoalim"
+  | "discount"
+  | "mizrahi"
+  | "max"
+  | "visaCal"
+  | "isracard"
+  | "amex"
+  | "otsarHahayal"
+  | "mercantile";
+
 export interface BankDefinition {
   name: string;
-  companyId: CompanyTypes;
+  companyId: BankCompanyId;
   /** Maps credential field name to environment variable name */
   credentialFields: Record<string, string>;
 }
@@ -20,7 +30,7 @@ export interface BankDefinition {
 export const BANK_DEFINITIONS: BankDefinition[] = [
   {
     name: "Leumi",
-    companyId: CompanyTypes.leumi,
+    companyId: "leumi",
     credentialFields: {
       username: "LEUMI_USERNAME",
       password: "LEUMI_PASSWORD",
@@ -28,7 +38,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Hapoalim",
-    companyId: CompanyTypes.hapoalim,
+    companyId: "hapoalim",
     credentialFields: {
       userCode: "HAPOALIM_USERCODE",
       password: "HAPOALIM_PASSWORD",
@@ -36,7 +46,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Discount",
-    companyId: CompanyTypes.discount,
+    companyId: "discount",
     credentialFields: {
       id: "DISCOUNT_ID",
       password: "DISCOUNT_PASSWORD",
@@ -45,7 +55,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Mizrahi",
-    companyId: CompanyTypes.mizrahi,
+    companyId: "mizrahi",
     credentialFields: {
       username: "MIZRAHI_USERNAME",
       password: "MIZRAHI_PASSWORD",
@@ -53,7 +63,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Max",
-    companyId: CompanyTypes.max,
+    companyId: "max",
     credentialFields: {
       username: "MAX_USERNAME",
       password: "MAX_PASSWORD",
@@ -61,7 +71,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Visa Cal",
-    companyId: CompanyTypes.visaCal,
+    companyId: "visaCal",
     credentialFields: {
       username: "VISACAL_USERNAME",
       password: "VISACAL_PASSWORD",
@@ -69,7 +79,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Isracard",
-    companyId: CompanyTypes.isracard,
+    companyId: "isracard",
     credentialFields: {
       id: "ISRACARD_ID",
       card6Digits: "ISRACARD_CARD6DIGITS",
@@ -78,7 +88,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Amex",
-    companyId: CompanyTypes.amex,
+    companyId: "amex",
     credentialFields: {
       id: "AMEX_ID",
       card6Digits: "AMEX_CARD6DIGITS",
@@ -87,7 +97,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Otsar Hahayal",
-    companyId: CompanyTypes.otsarHahayal,
+    companyId: "otsarHahayal",
     credentialFields: {
       username: "OTSARHAHAYAL_USERNAME",
       password: "OTSARHAHAYAL_PASSWORD",
@@ -95,7 +105,7 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
   },
   {
     name: "Mercantile",
-    companyId: CompanyTypes.mercantile,
+    companyId: "mercantile",
     credentialFields: {
       id: "MERCANTILE_ID",
       password: "MERCANTILE_PASSWORD",

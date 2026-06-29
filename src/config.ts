@@ -1,10 +1,9 @@
-import { CompanyTypes } from "israeli-bank-scrapers";
-import { BANK_DEFINITIONS, type BankDefinition } from "./banks.js";
+import { BANK_DEFINITIONS, type BankCompanyId, type BankDefinition } from "./banks.js";
 import { getEnvFilePath } from "./env.js";
 
 export interface AccountConfig {
   name: string;
-  companyId: CompanyTypes;
+  companyId: BankCompanyId;
   credentials: Record<string, string>;
   enabled: boolean;
 }
