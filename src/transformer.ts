@@ -2,7 +2,7 @@ import type {
   Transaction,
   TransactionStatuses,
   TransactionTypes,
-} from "israeli-bank-scrapers/lib/transactions";
+} from "israeli-bank-scrapers/lib/transactions.js";
 
 export interface YnabRow {
   date: string;

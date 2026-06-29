@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ScrapeResult } from "./scraper.js";
 import type { EnrichedTransaction, YnabRow } from "./transformer.js";
 
 export interface SkippedTransaction {
