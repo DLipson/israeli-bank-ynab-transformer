@@ -9,3 +9,9 @@
 - **Root Cause**: `loadAppEnv({ override: true })` reloaded the app config `.env` after hydrating credentials from Windows Credential Manager, and blank credential entries in that file overwrote the non-empty in-memory values.
 - **Fix**: Changed `loadAppEnv` to parse the app config file manually and skip overriding an existing non-empty environment variable with an empty string from `.env`.
 - **Verification**: Added a regression test in `src/env.test.ts` covering the empty-string override case; ran `npm test -- src/env.test.ts` and then `npm test`.
+
+## 2026-06-29 - Fix scraper transaction type imports
+- **Bug**: `npm run build` failed because `EnrichedTransaction` no longer exposed scraper transaction fields such as `date`, `processedDate`, `description`, `chargedAmount`, `type`, and `status`; `audit-logger.ts` also referenced `ScrapeResult` without importing it.
+- **Root Cause**: The project uses `module`/`moduleResolution` `NodeNext`, but `transformer.ts` imported scraper transaction types from the extensionless deep path `israeli-bank-scrapers/lib/transactions`. TypeScript could not resolve that path, so `EnrichedTransaction extends Transaction` lost the scraper fields. `audit-logger.ts` also depended on `ScrapeResult` without a local type import.
+- **Fix**: Updated the transaction type import to `israeli-bank-scrapers/lib/transactions.js`, added the missing `ScrapeResult` type import, and added a compile-time regression test that asserts `EnrichedTransaction` preserves the scraper `Transaction` fields while adding account metadata.
+- **Verification**: Confirmed the red build failure with `npm run build`; after the fix, ran `npm run build` and `npm test` successfully.
