@@ -1,8 +1,7 @@
-const BASE = "/api";
+﻿const BASE = "/api";
 
 export interface AccountInfo {
   name: string;
-  companyId: string;
   fields: string[];
   enabled: boolean;
 }
@@ -26,13 +25,6 @@ export interface AccountSummaryData {
   inflow: number;
 }
 
-export interface ScrapeResultInfo {
-  accountName: string;
-  success: boolean;
-  transactionCount: number;
-  error?: string;
-}
-
 export interface TransactionSummary {
   byAccount: Record<string, AccountSummaryData>;
   totalOutflow: number;
@@ -40,12 +32,10 @@ export interface TransactionSummary {
 }
 
 export interface ScrapePayload {
-  scrapeResults: ScrapeResultInfo[];
-  kept: Record<string, unknown>[];
   skipped: SkippedItem[];
   rows: YnabRow[];
   summary: TransactionSummary;
-  auditLog?: any;
+  auditLog: Record<string, unknown>;
 }
 
 export interface SSEEvent {
@@ -58,107 +48,32 @@ export interface SSEEvent {
   payload?: ScrapePayload;
 }
 
-export interface ReconcileResult {
-  sourceFile: string;
-  targetFile: string;
-  sourceCount: number;
-  targetCount: number;
-  matched: Array<{ source: NormalizedTransaction; target: NormalizedTransaction }>;
-  flagged: Array<{
-    source: NormalizedTransaction;
-    target: NormalizedTransaction;
-    dateDiff: number;
-  }>;
-  missingFromTarget: NormalizedTransaction[];
-  extraInTarget: NormalizedTransaction[];
-}
-
-export interface NormalizedTransaction {
-  transactionDate: string;
-  chargeDate: string;
-  payee: string;
-  outflow: number;
-  inflow: number;
-  originalAmount: number | null;
-  notes: string;
-  source: string;
-}
-
-export type ReportStatus = "red" | "yellow" | "green";
-
-export interface CategoryAvailabilityRow {
-  id: string;
-  name: string;
-  groupName: string;
-  availableMilliunits: number;
-  available: string;
-  status: ReportStatus;
-}
-
-export interface CategoryAvailabilityReport {
-  budgetId: string;
-  timezone: string;
-  currency: string;
-  generatedAtIso: string;
-  generatedAtLocal: string;
-  rows: CategoryAvailabilityRow[];
-  totals: {
-    red: number;
-    yellow: number;
-    green: number;
-    count: number;
-  };
-}
-
-export interface CategoryReportPreviewResponse {
-  report: CategoryAvailabilityReport;
-  html: string;
-}
-
-export interface SendTestCategoryReportEmailResponse {
-  recipientEmail: string;
-  subject: string;
-  totals: {
-    red: number;
-    yellow: number;
-    green: number;
-    count: number;
-  };
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data as T;
 }
 
 // --- Accounts ---
 
 export async function getAccounts(): Promise<AccountInfo[]> {
-  const res = await fetch(`${BASE}/accounts`);
-  const data = await res.json();
-  return data.accounts;
+  return (await request<{ accounts: AccountInfo[] }>("/accounts")).accounts;
 }
 
-export async function saveCredentials(
-  name: string,
-  credentials: Record<string, string>
-): Promise<void> {
-  const res = await fetch(`${BASE}/accounts/${encodeURIComponent(name)}/credentials`, {
+export async function saveCredentials(name: string, credentials: Record<string, string>): Promise<void> {
+  await request(`/accounts/${encodeURIComponent(name)}/credentials`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credentials }),
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Failed to save credentials");
-  }
 }
 
 export async function deleteCredentials(name: string): Promise<void> {
-  const res = await fetch(`${BASE}/accounts/${encodeURIComponent(name)}/credentials`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Failed to delete credentials");
-  }
+  await request(`/accounts/${encodeURIComponent(name)}/credentials`, { method: "DELETE" });
 }
-
 // --- Scrape SSE ---
 
 export function createScrapeStream(
@@ -205,96 +120,24 @@ export function createScrapeStream(
 }
 
 export async function cancelScrape(scrapeId: string): Promise<void> {
-  const res = await fetch(`${BASE}/scrape/cancel`, {
+  await request("/scrape/cancel", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scrapeId }),
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Failed to cancel scrape");
-  }
 }
-
 // --- Export ---
 
 export async function exportCSV(body: {
   rows: YnabRow[];
   outputDir: string;
   split: boolean;
-  scrapeResults: ScrapeResultInfo[];
-  skipped: SkippedItem[];
-  auditLog?: any;
+  auditLog: Record<string, unknown>;
 }): Promise<{ csvPaths: string[]; auditLogPath: string }> {
-  const res = await fetch(`${BASE}/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Export failed");
-  }
-  return res.json();
+  return request("/export", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function openPath(path: string): Promise<{ path: string }> {
-  const res = await fetch(`${BASE}/open-path`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Failed to open path");
-  }
-  return res.json();
+  return request("/open-path", { method: "POST", body: JSON.stringify({ path }) });
 }
 
-// --- Reconcile ---
 
-export async function reconcile(body: {
-  sourceContent: string;
-  targetContent: string;
-  sourceLabel: string;
-  targetLabel: string;
-}): Promise<ReconcileResult> {
-  const res = await fetch(`${BASE}/reconcile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Reconcile failed");
-  }
-  return res.json();
-}
-
-// --- Category Report ---
-
-export async function previewCategoryReport(): Promise<CategoryReportPreviewResponse> {
-  const res = await fetch(`${BASE}/report/preview`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Report preview failed");
-  }
-  return res.json();
-}
-
-export async function sendTestCategoryReportEmail(): Promise<SendTestCategoryReportEmailResponse> {
-  const res = await fetch(`${BASE}/report/send-test-email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Failed to send test email");
-  }
-  return res.json();
-}

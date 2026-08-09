@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { program } from "commander";
 import { loadConfig } from "./config.js";
@@ -7,7 +7,6 @@ import { scrapeAllAccounts } from "./scraper.js";
 import { transformTransactions, filterAndPartition, groupByAccount, calculateSummary, type EnrichedTransaction } from "./transformer.js";
 import { toCSV, generateFilename } from "./csv-writer.js";
 import { createAuditLogger } from "./audit-logger.js";
-import { reconcile, formatReconcileReport } from "./reconcile.js";
 import { getEnvFilePath, loadAppEnv } from "./env.js";
 
 loadAppEnv();
@@ -106,30 +105,6 @@ program
     const logPath = saveAuditLog(auditLogger);
     console.log(`\nAudit log saved to: ${logPath}`);
     console.log("\nDone!");
-  });
-
-program
-  .command("reconcile")
-  .description("Compare bank CSV against scraper output to verify nothing was missed or duplicated")
-  .argument("<source>", "Source CSV file (e.g., bank export)")
-  .argument("<target>", "Target CSV file (e.g., scraper output)")
-  .action((source, target) => {
-    console.log(`\nReconciling: ${source} vs ${target}\n`);
-
-    try {
-      const sourceContent = readFileSync(source, "utf-8");
-      const targetContent = readFileSync(target, "utf-8");
-      const result = reconcile(sourceContent, targetContent, source, target);
-      const report = formatReconcileReport(result);
-      console.log(report);
-
-      const hasDiscrepancies = result.missingFromTarget.length > 0 || result.extraInTarget.length > 0;
-      process.exitCode = hasDiscrepancies ? 1 : 0;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Error: ${message}`);
-      process.exitCode = 1;
-    }
   });
 
 program
