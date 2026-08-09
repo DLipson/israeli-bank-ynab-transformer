@@ -25,7 +25,6 @@ interface ScrapeSettingsProps {
   accountsLoading: boolean;
   accountsError: string;
   onStart: () => void;
-  disabled: boolean;
 }
 
 export function ScrapeSettings({
@@ -49,7 +48,6 @@ export function ScrapeSettings({
   accountsLoading,
   accountsError,
   onStart,
-  disabled,
 }: ScrapeSettingsProps) {
   const enabledAccounts = accounts.filter((account) => account.enabled);
   const toggleAccount = (name: string) => {
@@ -135,10 +133,10 @@ export function ScrapeSettings({
         <div className="flex items-center justify-between">
           <Label className="text-sm">Accounts to scrape</Label>
           <div className="flex items-center gap-2">
-            <Button type="button" size="sm" variant="ghost" onClick={selectAll} disabled={disabled}>
+            <Button type="button" size="sm" variant="ghost" onClick={selectAll}>
               Select all
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={clearAll} disabled={disabled}>
+            <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
               Clear
             </Button>
           </div>
@@ -167,7 +165,7 @@ export function ScrapeSettings({
                   className="h-4 w-4"
                   checked={selectedAccounts.includes(account.name)}
                   onChange={() => toggleAccount(account.name)}
-                  disabled={disabled}
+                 
                 />
                 <span>{account.name}</span>
               </label>
@@ -178,11 +176,12 @@ export function ScrapeSettings({
 
       <Button
         onClick={onStart}
-        disabled={disabled || selectedAccounts.length === 0}
+        disabled={selectedAccounts.length === 0}
         className="w-full"
       >
-        {disabled ? "Scraping..." : "Start Scraping"}
+        Start Scraping
       </Button>
     </div>
   );
 }
+

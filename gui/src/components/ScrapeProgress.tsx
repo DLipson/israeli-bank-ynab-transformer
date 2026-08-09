@@ -1,10 +1,9 @@
-import { Badge } from "@/components/ui/badge";
+﻿import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 export interface AccountStatus {
   name: string;
   status: "pending" | "scraping" | "done" | "failed";
-  message: string;
   transactionCount?: number;
   error?: string;
 }
@@ -60,3 +59,4 @@ export function ScrapeProgress({ accounts, messages }: ScrapeProgressProps) {
     </div>
   );
 }
+
