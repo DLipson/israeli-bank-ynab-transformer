@@ -1,6 +1,6 @@
-import { loadCategoryReportConfig } from "./report-config.js";
+﻿import { loadCategoryReportConfig } from "./report-config.js";
 import { sendCategoryAvailabilityEmail } from "./report-email.js";
-import { getLocalHour, shouldRunAtLocalHour } from "./schedule.js";
+import { getLocalHour } from "./schedule.js";
 import { loadAppEnv } from "../env.js";
 
 loadAppEnv();
@@ -29,7 +29,7 @@ async function run(): Promise<void> {
   const sendHour = parseSendHour(process.env.YNAB_REPORT_SEND_HOUR);
   const localHour = getLocalHour(now, timezone);
 
-  if (!force && !shouldRunAtLocalHour(now, timezone, sendHour)) {
+  if (!force && localHour !== sendHour) {
     console.log(
       `Skipping send at ${now.toISOString()} because local hour ${localHour} in ${timezone} does not match ${sendHour}.`
     );
@@ -69,3 +69,4 @@ run().catch((error) => {
   console.error(message);
   process.exitCode = 1;
 });
+

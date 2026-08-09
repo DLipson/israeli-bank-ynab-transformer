@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+﻿import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CategorySelection } from "./report-service.js";
 import { getCategoryReportConfigPath } from "../env.js";
@@ -55,9 +55,9 @@ function parseSelectedCategories(raw: unknown): CategorySelection[] {
   return parsed;
 }
 
-export function loadCategoryReportConfig(filePath?: string): CategoryReportConfig {
+export function loadCategoryReportConfig(): CategoryReportConfig {
   const configPath = resolve(
-    filePath ?? process.env.YNAB_CATEGORY_REPORT_CONFIG ?? getCategoryReportConfigPath()
+    process.env.YNAB_CATEGORY_REPORT_CONFIG ?? getCategoryReportConfigPath()
   );
   if (!existsSync(configPath)) {
     throw new Error(`Report config file not found: ${configPath}`);
@@ -90,3 +90,4 @@ export function loadCategoryReportConfig(filePath?: string): CategoryReportConfi
 
   return config;
 }
+

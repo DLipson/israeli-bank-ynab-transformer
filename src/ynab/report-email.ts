@@ -1,10 +1,10 @@
+﻿import nodemailer from "nodemailer";
 import {
   buildCategoryAvailabilityHtml,
   getCategoryAvailabilityReport,
   type CategoryAvailabilityReport,
   type CategorySelection,
 } from "./report-service.js";
-import { sendEmail, type SendEmailInput } from "./email-service.js";
 
 export interface SendCategoryAvailabilityEmailInput {
   token: string;
@@ -23,12 +23,6 @@ export interface SendCategoryAvailabilityEmailInput {
 export interface SendCategoryAvailabilityEmailResult {
   subject: string;
   report: CategoryAvailabilityReport;
-}
-
-interface SendCategoryAvailabilityEmailDeps {
-  getReport?: typeof getCategoryAvailabilityReport;
-  sendEmail?: (input: SendEmailInput) => Promise<void>;
-  buildHtml?: typeof buildCategoryAvailabilityHtml;
 }
 
 function buildSubject(now: Date, locale: string, timezone: string): string {
@@ -53,34 +47,31 @@ function buildTextReport(report: CategoryAvailabilityReport): string {
 }
 
 export async function sendCategoryAvailabilityEmail(
-  input: SendCategoryAvailabilityEmailInput,
-  deps: SendCategoryAvailabilityEmailDeps = {}
+  input: SendCategoryAvailabilityEmailInput
 ): Promise<SendCategoryAvailabilityEmailResult> {
-  const getReport = deps.getReport ?? getCategoryAvailabilityReport;
-  const send = deps.sendEmail ?? sendEmail;
-  const buildHtml = deps.buildHtml ?? buildCategoryAvailabilityHtml;
+  const missing = [
+    ["smtpUser", input.smtpUser],
+    ["smtpAppPassword", input.smtpAppPassword],
+    ["recipientEmail", input.recipientEmail],
+  ].filter(([, value]) => !value.trim()).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`Missing required email fields: ${missing.join(", ")}`);
+  }
+
   const now = input.now ?? new Date();
   const timezone = input.timezone ?? "Asia/Jerusalem";
   const locale = input.locale ?? "en-IL";
-
-  const report = await getReport({
-    token: input.token,
-    budgetId: input.budgetId,
-    selectedCategories: input.selectedCategories,
-    timezone: input.timezone,
-    currency: input.currency,
-    locale: input.locale,
-    yellowThresholdMilliunits: input.yellowThresholdMilliunits,
-    now: input.now,
-  });
-
+  const report = await getCategoryAvailabilityReport(input);
   const subject = buildSubject(now, locale, timezone);
-  const html = buildHtml(report);
+  const html = buildCategoryAvailabilityHtml(report);
   const text = buildTextReport(report);
 
-  await send({
-    smtpUser: input.smtpUser,
-    smtpAppPassword: input.smtpAppPassword,
+  const transport = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: input.smtpUser, pass: input.smtpAppPassword },
+  });
+  await transport.sendMail({
+    from: `YNAB Reporter <${input.smtpUser}>`,
     to: input.recipientEmail,
     subject,
     html,

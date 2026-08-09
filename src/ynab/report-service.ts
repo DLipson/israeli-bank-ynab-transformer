@@ -1,4 +1,4 @@
-export interface YnabCategory {
+﻿export interface YnabCategory {
   id: string;
   name: string;
   balance: number;
@@ -66,7 +66,6 @@ export interface GetCategoryAvailabilityReportInput {
   locale?: string;
   yellowThresholdMilliunits?: number;
   now?: Date;
-  fetchCategoryGroups?: (token: string, budgetId: string) => Promise<YnabCategoryGroup[]>;
 }
 
 interface YnabCategoryGroupsResponse {
@@ -257,8 +256,7 @@ export async function getCategoryAvailabilityReport(
     throw new Error("Budget id is required.");
   }
 
-  const fetchCategoryGroups = input.fetchCategoryGroups ?? fetchYnabCategoryGroups;
-  const categoryGroups = await fetchCategoryGroups(token, input.budgetId);
+  const categoryGroups = await fetchYnabCategoryGroups(token, input.budgetId);
 
   return buildCategoryAvailabilityReport({
     budgetId: input.budgetId,
@@ -317,3 +315,5 @@ export function buildCategoryAvailabilityHtml(report: CategoryAvailabilityReport
 </body>
 </html>`;
 }
+
+
