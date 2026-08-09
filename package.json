@@ -27,14 +27,12 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "israeli-bank-scrapers": "file:../israeli-bank-scrapers",
     "nodemailer": "^8.0.1"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/nodemailer": "^7.0.10",
     "@types/node": "^22.10.0",
@@ -48,3 +46,5 @@
     "vitest": "^2.1.0"
   }
 }
+
+

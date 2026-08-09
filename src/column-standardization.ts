@@ -1,3 +1,5 @@
+import { formatDate, parseDate } from "./transformer.js";
+
 export interface NormalizedTransaction {
   transactionDate: string;
   chargeDate: string;
@@ -61,21 +63,9 @@ export function normalizeDate(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
 
-  const ddmmyyyy = trimmed.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
-  if (ddmmyyyy) {
-    const [, day, month, year] = ddmmyyyy;
-    const fullYear = year.length === 2
-      ? (parseInt(year, 10) >= 70 ? 1900 + parseInt(year, 10) : 2000 + parseInt(year, 10))
-      : parseInt(year, 10);
-    return `${fullYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  }
-
-  if (/^\d{4}/.test(trimmed) && !isNaN(Date.parse(trimmed))) {
-    const parsed = new Date(trimmed);
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, "0");
-    const day = String(parsed.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+  if (/^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(trimmed) || /^\d{4}/.test(trimmed)) {
+    const parsed = parseDate(trimmed);
+    if (parsed) return formatDate(parsed);
   }
 
   return trimmed;

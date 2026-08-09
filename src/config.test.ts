@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { validateDaysBack, calculateStartDate, getSupportedBanks, loadConfig } from "./config.js";
+﻿import { describe, it, expect } from "vitest";
+import { validateDaysBack, calculateStartDate, loadConfig } from "./config.js";
 
 describe("validateDaysBack", () => {
   it("returns default for undefined", () => {
@@ -63,17 +63,5 @@ describe("calculateStartDate", () => {
   });
 });
 
-describe("getSupportedBanks", () => {
-  it("returns array of bank names", () => {
-    const banks = getSupportedBanks();
-    expect(Array.isArray(banks)).toBe(true);
-    expect(banks.length).toBeGreaterThan(0);
-  });
 
-  it("includes common Israeli banks", () => {
-    const banks = getSupportedBanks();
-    expect(banks).toContain("Leumi");
-    expect(banks).toContain("Hapoalim");
-    expect(banks).toContain("Max");
-  });
-});
+

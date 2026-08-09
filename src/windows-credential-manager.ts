@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+﻿import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const SCRIPT_PATH = resolve(
 );
 const POWERSHELL_COMMANDS = ["pwsh", "powershell"];
 
-type ScriptAction = "Get" | "Set" | "Delete" | "GetMany" | "SetMany" | "DeleteMany";
+type ScriptAction = "GetMany" | "SetMany" | "DeleteMany";
 
 export function isWindowsCredentialManagerAvailable(): boolean {
   return process.platform === "win32" && existsSync(SCRIPT_PATH);
@@ -125,3 +125,4 @@ function runCredentialScript(action: ScriptAction, params: Record<string, string
     `Unable to execute PowerShell to access Windows Credential Manager${launchError ? `: ${launchError}` : "."}`
   );
 }
+

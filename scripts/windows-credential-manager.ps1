@@ -1,6 +1,6 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("Get", "Set", "Delete", "GetMany", "SetMany", "DeleteMany")]
+  [ValidateSet("GetMany", "SetMany", "DeleteMany")]
   [string]$Action,
 
   [string]$Target = "",
@@ -121,41 +121,6 @@ function Throw-IfWin32Failed {
 }
 
 switch ($Action) {
-  "Get" {
-    if (-not $Target) {
-      throw "Target is required for Get action."
-    }
-    $value = [CredentialNative]::ReadCredential($Target)
-    if ($null -eq $value) {
-      [Console]::Out.Write("")
-      exit 0
-    }
-    [Console]::Out.Write($value)
-    exit 0
-  }
-  "Set" {
-    if (-not $Target) {
-      throw "Target is required for Set action."
-    }
-    $ok = [CredentialNative]::WriteCredential($Target, $Username, $Secret)
-    if (-not $ok) {
-      Throw-IfWin32Failed -Message "Failed to write credential for target '$Target'"
-    }
-    exit 0
-  }
-  "Delete" {
-    if (-not $Target) {
-      throw "Target is required for Delete action."
-    }
-    $ok = [CredentialNative]::DeleteCredential($Target)
-    if (-not $ok) {
-      $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-      if ($code -ne 1168) {
-        throw "Failed to delete credential for target '$Target' (Win32 error: $code)"
-      }
-    }
-    exit 0
-  }
   "GetMany" {
     $targets = @()
     if ($ItemsJson) {
@@ -210,3 +175,5 @@ switch ($Action) {
     exit 0
   }
 }
+
+

@@ -1,5 +1,5 @@
-import { CompanyTypes } from "israeli-bank-scrapers";
-import { BANK_DEFINITIONS, type BankDefinition } from "./banks.js";
+﻿import { CompanyTypes } from "israeli-bank-scrapers";
+import { BANK_DEFINITIONS } from "./banks.js";
 import { getEnvFilePath } from "./env.js";
 
 export interface AccountConfig {
@@ -27,36 +27,6 @@ const DEFAULT_OUTPUT_DIR = "./output";
 
 function getEnv(key: string): string {
   return process.env[key] ?? "";
-}
-
-function hasAllCredentials(creds: Record<string, string>): boolean {
-  return Object.values(creds).every((v) => v.length > 0);
-}
-
-/**
- * Build credentials object from environment variables
- */
-function buildCredentials(bank: BankDefinition): Record<string, string> {
-  const credentials: Record<string, string> = {};
-  for (const [field, envVar] of Object.entries(bank.credentialFields)) {
-    credentials[field] = getEnv(envVar);
-  }
-  return credentials;
-}
-
-/**
- * Convert bank definitions to account configs
- */
-function buildAccountConfigs(): AccountConfig[] {
-  return BANK_DEFINITIONS.map((bank) => {
-    const credentials = buildCredentials(bank);
-    return {
-      name: bank.name,
-      companyId: bank.companyId,
-      credentials,
-      enabled: hasAllCredentials(credentials),
-    };
-  });
 }
 
 /**
@@ -93,7 +63,17 @@ export function calculateStartDate(daysBack: number): Date {
 export function loadConfig(options: LoadConfigOptions = {}): Config {
   const daysBack = validateDaysBack(options.daysBack);
   const startDate = calculateStartDate(daysBack);
-  const accounts = buildAccountConfigs();
+  const accounts: AccountConfig[] = BANK_DEFINITIONS.map((bank) => {
+    const credentials = Object.fromEntries(
+      Object.entries(bank.credentialFields).map(([field, envVar]) => [field, getEnv(envVar)])
+    ) as Record<string, string>;
+    return {
+      name: bank.name,
+      companyId: bank.companyId,
+      credentials,
+      enabled: Object.values(credentials).every(Boolean),
+    };
+  });
   const warnings: string[] = [];
 
   if (daysBack > 365) {
@@ -116,9 +96,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   };
 }
 
-/**
- * Get list of all supported bank names
- */
-export function getSupportedBanks(): string[] {
-  return BANK_DEFINITIONS.map((b) => b.name);
-}
+
+
+

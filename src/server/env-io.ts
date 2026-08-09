@@ -1,41 +1,14 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-
-/**
- * Parse a .env file into key-value pairs.
- * Preserves awareness of comments and blank lines for rewriting.
- */
-export function readEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) {
-    return {};
-  }
-  const content = readFileSync(path, "utf-8");
-  const vars: Record<string, string> = {};
-
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const eqIndex = trimmed.indexOf("=");
-    if (eqIndex === -1) continue;
-
-    const key = trimmed.slice(0, eqIndex).trim();
-    let value = trimmed.slice(eqIndex + 1).trim();
-
-    // Remove surrounding quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    vars[key] = value;
-  }
-
-  return vars;
-}
+﻿import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import dotenv from "dotenv";
 
 /**
  * Write/update specific keys in a .env file, preserving comments and structure.
  * Only the keys in `updates` are changed; everything else stays the same.
  */
+export function readEnvFile(path: string): Record<string, string> {
+  return existsSync(path) ? dotenv.parse(readFileSync(path, "utf-8")) : {};
+}
+/** Preserve comments and structure while updating selected keys. */
 export function writeEnvFile(path: string, updates: Record<string, string>): void {
   let lines: string[] = [];
 
@@ -73,9 +46,7 @@ export function writeEnvFile(path: string, updates: Record<string, string>): voi
  * Clear specific keys in a .env file (set them to empty string).
  */
 export function clearEnvVars(path: string, keys: string[]): void {
-  const updates: Record<string, string> = {};
-  for (const key of keys) {
-    updates[key] = "";
-  }
-  writeEnvFile(path, updates);
+  writeEnvFile(path, Object.fromEntries(keys.map((key) => [key, ""])));
 }
+
+
