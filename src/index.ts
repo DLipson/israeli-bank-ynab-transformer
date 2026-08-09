@@ -23,6 +23,7 @@ program
   .option("-s, --show-browser", "Show browser window during scraping", false)
   .option("-o, --output <dir>", "Output directory", "./output")
   .option("--split", "Generate separate CSV per account", false)
+  .option("-c, --concurrency <count>", "Accounts to process at once", "1")
   .option("--dry-run", "Preview what would be exported without writing files", false)
   .action(async (options) => {
     const config = loadConfig({
@@ -38,12 +39,15 @@ program
       config.outputDir = options.output;
     }
 
+    const concurrency = Math.max(1, parseInt(options.concurrency, 10) || 1);
     const auditLogger = createAuditLogger();
     const results = await scrapeAllAccounts(
       config.accounts,
       config.startDate,
       config.showBrowser,
-      console.log
+      console.log,
+      undefined,
+      { concurrency }
     );
 
     auditLogger.recordScrapeResults(results);

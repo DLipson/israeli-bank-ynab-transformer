@@ -17,6 +17,8 @@ interface ScrapeSettingsProps {
   setEnableDetailedLogging: (v: boolean) => void;
   detailedLoggingLimit: number;
   setDetailedLoggingLimit: (v: number) => void;
+  concurrency: number;
+  setConcurrency: (v: number) => void;
   accounts: AccountInfo[];
   selectedAccounts: string[];
   setSelectedAccounts: (v: string[]) => void;
@@ -39,6 +41,8 @@ export function ScrapeSettings({
   setEnableDetailedLogging,
   detailedLoggingLimit,
   setDetailedLoggingLimit,
+  concurrency,
+  setConcurrency,
   accounts,
   selectedAccounts,
   setSelectedAccounts,
@@ -87,6 +91,18 @@ export function ScrapeSettings({
           <Switch id="showBrowser" checked={showBrowser} onCheckedChange={setShowBrowser} />
           <Label htmlFor="showBrowser">Show browser</Label>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="concurrency">Concurrency</Label>
+        <Input
+          id="concurrency"
+          type="number"
+          min={1}
+          value={concurrency}
+          onChange={(e) => setConcurrency(Math.max(1, parseInt(e.target.value) || 1))}
+          className="w-32"
+        />
       </div>
 
       <div className="border-t pt-4 space-y-3">

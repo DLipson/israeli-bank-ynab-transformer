@@ -27,6 +27,7 @@ type StoredSettings = {
   showBrowser: boolean;
   enableDetailedLogging: boolean;
   detailedLoggingLimit: number;
+  concurrency: number;
   selectedAccounts: string[];
 };
 
@@ -136,6 +137,7 @@ export function ScrapePage() {
   const [detailedLoggingLimit, setDetailedLoggingLimit] = useState(
     () => initialSettings.detailedLoggingLimit ?? 10
   );
+  const [concurrency, setConcurrency] = useState(() => initialSettings.concurrency ?? 1);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState("");
@@ -200,6 +202,7 @@ export function ScrapePage() {
       showBrowser,
       enableDetailedLogging,
       detailedLoggingLimit,
+      concurrency,
       selectedAccounts,
     });
   }, [
@@ -209,6 +212,7 @@ export function ScrapePage() {
     showBrowser,
     enableDetailedLogging,
     detailedLoggingLimit,
+    concurrency,
     selectedAccounts,
   ]);
 
@@ -278,6 +282,7 @@ export function ScrapePage() {
       showBrowser,
       enableDetailedLogging,
       detailedLoggingLimit,
+      concurrency,
       selectedAccounts,
       scrapeId,
       (event: SSEEvent) => {
@@ -349,6 +354,7 @@ export function ScrapePage() {
     showBrowser,
     enableDetailedLogging,
     detailedLoggingLimit,
+    concurrency,
     selectedAccounts,
   ]);
 
@@ -458,6 +464,8 @@ export function ScrapePage() {
               setEnableDetailedLogging={setEnableDetailedLogging}
               detailedLoggingLimit={detailedLoggingLimit}
               setDetailedLoggingLimit={setDetailedLoggingLimit}
+              concurrency={concurrency}
+              setConcurrency={setConcurrency}
               accounts={accounts}
               selectedAccounts={selectedAccounts}
               setSelectedAccounts={setSelectedAccounts}

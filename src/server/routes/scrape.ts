@@ -32,6 +32,7 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
   const showBrowser = req.query.showBrowser === "true";
   const enableDetailedLogging = req.query.enableDetailedLogging === "true";
   const detailedLoggingLimit = parseInt(req.query.detailedLoggingLimit as string) || 0;
+  const concurrency = parseInt(req.query.concurrency as string) || 1;
   const accountsParam = typeof req.query.accounts === "string" ? req.query.accounts : "";
   const selectedAccounts = accountsParam
     .split(",")
@@ -108,7 +109,8 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
       (message: string) => {
         sendEvent({ type: "progress", message });
       },
-      abortController.signal
+      abortController.signal,
+      { concurrency }
     );
 
     if (abortController.signal.aborted) {

@@ -1,4 +1,4 @@
-﻿const BASE = "/api";
+const BASE = "/api";
 
 export interface AccountInfo {
   name: string;
@@ -81,6 +81,7 @@ export function createScrapeStream(
   showBrowser: boolean,
   enableDetailedLogging: boolean,
   detailedLoggingLimit: number,
+  concurrency: number,
   selectedAccounts: string[],
   scrapeId: string,
   onEvent: (event: SSEEvent) => void
@@ -90,6 +91,7 @@ export function createScrapeStream(
     showBrowser: String(showBrowser),
     enableDetailedLogging: String(enableDetailedLogging),
     detailedLoggingLimit: String(detailedLoggingLimit),
+    concurrency: String(concurrency),
   });
   if (selectedAccounts.length > 0) {
     params.set("accounts", selectedAccounts.join(","));
