@@ -9,16 +9,12 @@ import { scrapeAllAccounts } from "../../scraper.js";
 import {
   filterAndPartition,
   transformTransaction,
-  transformTransactions,
   calculateSummary,
-  groupByAccount,
   type YnabRow,
   type EnrichedTransaction,
 } from "../../transformer.js";
 import { toCSV, generateFilename } from "../../csv-writer.js";
 import { createAuditLogger, formatAuditLog, type AuditLog } from "../../audit-logger.js";
-import type { ScrapeResult } from "../../scraper.js";
-import type { SkippedItem } from "../../transformer.js";
 
 const router = Router();
 const activeScrapes = new Map<string, AbortController>();
@@ -178,13 +174,6 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
     sendEvent({
       type: "done",
       payload: {
-        scrapeResults: results.map((r) => ({
-          accountName: r.accountName,
-          success: r.success,
-          transactionCount: r.transactions.length,
-          error: r.error,
-        })),
-        kept,
         skipped,
         rows,
         summary: summaryObj,
@@ -229,22 +218,15 @@ router.post("/scrape/cancel", (req: Request, res: Response) => {
  * Writes CSV files and audit log to disk.
  */
 router.post("/export", (req: Request, res: Response) => {
-  const { rows, outputDir, split, scrapeResults, skipped, auditLog } = req.body as {
+  const { rows, outputDir, split, auditLog } = req.body as {
     rows: YnabRow[];
     outputDir: string;
     split: boolean;
-    scrapeResults: Array<{
-      accountName: string;
-      success: boolean;
-      transactionCount: number;
-      error?: string;
-    }>;
-    skipped: SkippedItem[];
-    auditLog?: any;
+    auditLog: AuditLog;
   };
 
-  if (!rows || !outputDir) {
-    res.status(400).json({ error: "Missing rows or outputDir" });
+  if (!rows || !outputDir || !auditLog) {
+    res.status(400).json({ error: "Missing rows, outputDir, or auditLog" });
     return;
   }
 
@@ -287,54 +269,22 @@ router.post("/export", (req: Request, res: Response) => {
       csvPaths.push(outputPath);
     }
 
-    // Prepare audit log
-    let logToSave: AuditLog;
+    // Prepare audit log with the run metadata supplied by the current client.
+    const logToSave: AuditLog = { ...auditLog };
+    const allCsv = toCSV(rows);
+    const checksum = createHash("sha256").update(allCsv).digest("hex").slice(0, 16);
 
-    if (auditLog) {
-      // Use the provided audit log and just update the output information
-      logToSave = { ...auditLog };
-      const allCsv = toCSV(rows);
-      const checksum = createHash("sha256").update(allCsv).digest("hex").slice(0, 16);
+    logToSave.outputFile = csvPaths.length > 1 ? csvPaths.join(", ") : csvPaths[0];
+    logToSave.outputTransactionCount = rows.length;
 
-      logToSave.outputFile = csvPaths.length > 1 ? csvPaths.join(", ") : csvPaths[0];
-      logToSave.outputTransactionCount = rows.length;
-
-      for (const row of rows) {
-        const outflow = parseFloat(row.outflow) || 0;
-        const inflow = parseFloat(row.inflow) || 0;
-        logToSave.totalOutflow = (logToSave.totalOutflow || 0) + outflow;
-        logToSave.totalInflow = (logToSave.totalInflow || 0) + inflow;
-      }
-
-      logToSave.checksum = checksum;
-    } else {
-      // Create a new audit log (fallback for old clients)
-      const auditLogger = createAuditLogger();
-
-      if (scrapeResults) {
-        auditLogger.recordScrapeResults(
-          scrapeResults.map((r) => ({
-            accountName: r.accountName,
-            success: r.success,
-            transactions: [] as EnrichedTransaction[],
-            error: r.error,
-          }))
-        );
-      }
-
-      if (skipped) {
-        for (const item of skipped) {
-          auditLogger.recordSkipped(item.txn, item.reason);
-        }
-      }
-
-      const allCsv = toCSV(rows);
-      const outputPath = csvPaths.length > 1 ? csvPaths.join(", ") : csvPaths[0];
-      auditLogger.recordOutput(rows, outputPath, allCsv);
-
-      logToSave = auditLogger.getLog();
+    for (const row of rows) {
+      const outflow = parseFloat(row.outflow) || 0;
+      const inflow = parseFloat(row.inflow) || 0;
+      logToSave.totalOutflow = (logToSave.totalOutflow || 0) + outflow;
+      logToSave.totalInflow = (logToSave.totalInflow || 0) + inflow;
     }
 
+    logToSave.checksum = checksum;
     // Save audit log
     const logDir = "./logs";
     if (!existsSync(logDir)) {
@@ -406,3 +356,6 @@ function openInFileManager(targetPath: string) {
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
   child.unref();
 }
+
+
+
