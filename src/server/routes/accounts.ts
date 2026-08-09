@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { BANK_DEFINITIONS } from "../../banks.js";
 import { readEnvFile, writeEnvFile, clearEnvVars } from "../env-io.js";
 import { ensureAppConfigDirExists, getEnvFilePath, loadAppEnv } from "../../env.js";
@@ -10,17 +10,10 @@ import {
 
 const router = Router();
 
-function getEnvPath(): string {
-  return getEnvFilePath();
-}
-
-function reloadEnv(): void {
-  loadAppEnv({ override: true });
-}
 
 function getCredentialSourceEnvVars(): Record<string, string> {
   if (!isWindowsCredentialManagerAvailable()) {
-    return readEnvFile(getEnvPath());
+    return readEnvFile(getEnvFilePath());
   }
 
   const vars: Record<string, string> = {};
@@ -39,7 +32,7 @@ function getCredentialSourceEnvVars(): Record<string, string> {
  */
 router.get("/", (_req, res) => {
   // Refresh from credential storage so UI reflects external changes without a server restart.
-  reloadEnv();
+  loadAppEnv({ override: true });
   const envVars = getCredentialSourceEnvVars();
 
   const accounts = BANK_DEFINITIONS.map((bank) => {
@@ -77,11 +70,20 @@ router.put("/:name/credentials", (req, res) => {
     return;
   }
 
-  // Map credential field names to env var names
+  // Refresh from credential storage so empty fields can keep their existing value.
+  loadAppEnv({ override: true });
+  const existingEnvVars = getCredentialSourceEnvVars();
+
+  // Map credential field names to env var names. Empty fields keep the saved value.
   const updates: Record<string, string> = {};
   for (const [field, envVar] of Object.entries(bank.credentialFields)) {
     const value = credentials[field];
+    const hasExistingValue = (existingEnvVars[envVar] ?? "").length > 0;
+
     if (value === undefined || value === "") {
+      if (hasExistingValue) {
+        continue;
+      }
       res.status(400).json({ error: `Missing required field: ${field}` });
       return;
     }
@@ -92,13 +94,13 @@ router.put("/:name/credentials", (req, res) => {
     if (isWindowsCredentialManagerAvailable()) {
       saveBankCredentialsToWindowsCredentialManager(updates);
       ensureAppConfigDirExists();
-      clearEnvVars(getEnvPath(), Object.keys(updates));
+      clearEnvVars(getEnvFilePath(), Object.keys(updates));
     } else {
       ensureAppConfigDirExists();
-      writeEnvFile(getEnvPath(), updates);
+      writeEnvFile(getEnvFilePath(), updates);
     }
 
-    reloadEnv();
+    loadAppEnv({ override: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ error: message });
@@ -129,14 +131,14 @@ router.delete("/:name/credentials", (req, res) => {
     }
 
     ensureAppConfigDirExists();
-    clearEnvVars(getEnvPath(), envKeys);
+    clearEnvVars(getEnvFilePath(), envKeys);
 
     // Clear from in-memory env before reload.
     for (const key of envKeys) {
       delete process.env[key];
     }
 
-    reloadEnv();
+    loadAppEnv({ override: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ error: message });
@@ -147,3 +149,4 @@ router.delete("/:name/credentials", (req, res) => {
 });
 
 export default router;
+
