@@ -240,11 +240,15 @@ export function ScrapePage() {
     }
   }, [lastScrapeAt]);
 
+  const selectionInitializedRef = useRef(false);
+
   useEffect(() => {
     if (accountsLoading) return;
     if (accountsError) return;
     const enabledNames = accounts.filter((account) => account.enabled).map((account) => account.name);
     if (enabledNames.length === 0) return;
+    if (selectionInitializedRef.current) return;
+    selectionInitializedRef.current = true;
     const validSelected = selectedAccounts.filter((name) => enabledNames.includes(name));
     if (validSelected.length === 0) {
       setSelectedAccounts(enabledNames);
