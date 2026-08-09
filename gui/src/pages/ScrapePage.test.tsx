@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ScrapePage } from "@/pages/ScrapePage";
 
 vi.mock("@/api/client", async () => {
@@ -7,8 +7,8 @@ vi.mock("@/api/client", async () => {
   return {
     ...actual,
     getAccounts: vi.fn().mockResolvedValue([
-      { name: "Account A", companyId: "a", fields: [], enabled: true },
-      { name: "Account B", companyId: "b", fields: [], enabled: false },
+      { name: "Account A", fields: [], enabled: true },
+      { name: "Account B", fields: [], enabled: false },
     ]),
   };
 });
@@ -34,11 +34,11 @@ describe("ScrapePage settings persistence", () => {
       })
     );
 
-    render(<ScrapePage />);
+      render(<ScrapePage />);
 
     expect((screen.getByLabelText("Days Back") as HTMLInputElement).value).toBe("15");
-    expect((screen.getByLabelText("Output Directory") as HTMLInputElement).value).toBe(
-      "/tmp/out"
+    expect((screen.getByLabelText("Output Directory") as HTMLInputElement).value).toMatch(
+      /^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/
     );
     expect(screen.getByLabelText("Split by account")).toHaveAttribute("data-state", "checked");
     expect(screen.getByLabelText("Show browser")).toHaveAttribute("data-state", "checked");
@@ -55,7 +55,7 @@ describe("ScrapePage settings persistence", () => {
   });
 
   it("persists changes back to localStorage", async () => {
-    render(<ScrapePage />);
+      render(<ScrapePage />);
 
     fireEvent.change(screen.getByLabelText("Days Back"), {
       target: { value: "21" },
@@ -73,9 +73,35 @@ describe("ScrapePage settings persistence", () => {
       JSON.stringify("2026-04-08T12:00:00.000Z")
     );
 
-    render(<ScrapePage />);
+      render(<ScrapePage />);
 
     expect(await screen.findByText("Last scraped: 2026-04-08")).toBeInTheDocument();
+  });
+
+  it("defaults outputDir to ./output/ with a timestamp when no localStorage is set", async () => {
+      render(<ScrapePage />);
+
+    const outputDirInput = (await screen.findByLabelText("Output Directory")) as HTMLInputElement;
+    expect(outputDirInput.value).toMatch(/^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
+  });
+
+  it("shows the Scrape Again button in the results view", async () => {
+    localStorage.setItem(
+      "scrape.payload.v1",
+      JSON.stringify({
+        scrapeResults: [],
+        kept: [],
+        skipped: [],
+        rows: [],
+        summary: { byAccount: {}, totalOutflow: 0, totalInflow: 0 },
+      })
+    );
+
+      render(<ScrapePage />);
+
+    const fixedButton = screen.getByTestId("sc-again-fixed");
+    expect(fixedButton).toBeInTheDocument();
+    expect(fixedButton).not.toHaveClass("fixed");
   });
 
   it("defaults days back to one day before the last scrape date on reset", async () => {
@@ -97,9 +123,9 @@ describe("ScrapePage settings persistence", () => {
 
       render(<ScrapePage />);
 
-      fireEvent.click(await screen.findByRole("button", { name: "Scrape Again" }));
+      fireEvent.click(screen.getByTestId("sc-again-fixed").querySelector("button")!);
 
-      expect((await screen.findByLabelText("Days Back") as HTMLInputElement).value).toBe(
+      expect((screen.getByLabelText("Days Back") as HTMLInputElement).value).toBe(
         "2"
       );
     } finally {

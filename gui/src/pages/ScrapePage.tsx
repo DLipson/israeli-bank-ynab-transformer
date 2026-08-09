@@ -29,7 +29,6 @@ type StoredSettings = {
   detailedLoggingLimit: number;
   selectedAccounts: string[];
 };
-type StoredLastScrape = string | null;
 
 const STORAGE_KEYS = {
   settings: "scrape.settings.v1",
@@ -59,6 +58,16 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function formatTimestamp(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+
 function extractLastScrapeAt(payload: ScrapePayload | null): string | null {
   if (!payload) return null;
   const auditLog = payload.auditLog as { timestamp?: string } | undefined;
@@ -77,23 +86,19 @@ function calculateDaysBack(lastScrapeAt: string | null): number | null {
 }
 
 function readStoredJson<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
 }
 
 function writeStoredJson<T>(key: string, value: T): void {
-  if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 function removeStored(key: string): void {
-  if (typeof window === "undefined") return;
   window.localStorage.removeItem(key);
 }
 
@@ -102,11 +107,11 @@ export function ScrapePage() {
     settings: Partial<StoredSettings>;
     payload: ScrapePayload | null;
     exportResult: ExportResult | null;
-    lastScrapeAt: StoredLastScrape;
+    lastScrapeAt: string | null;
   } | null>(null);
   if (!initialRef.current) {
     const storedPayload = readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null);
-    const storedLastScrapeAt = readStoredJson<StoredLastScrape>(STORAGE_KEYS.lastScrapeAt, null);
+    const storedLastScrapeAt = readStoredJson<string | null>(STORAGE_KEYS.lastScrapeAt, null);
     initialRef.current = {
       settings: readStoredJson<Partial<StoredSettings>>(STORAGE_KEYS.settings, {}),
       payload: storedPayload,
@@ -122,7 +127,7 @@ export function ScrapePage() {
 
   // Settings state
   const [daysBack, setDaysBack] = useState(() => initialSettings.daysBack ?? 60);
-  const [outputDir, setOutputDir] = useState(() => initialSettings.outputDir ?? "./output");
+  const [outputDir, setOutputDir] = useState(() => `./output/${formatTimestamp()}`);
   const [split, setSplit] = useState(() => initialSettings.split ?? false);
   const [showBrowser, setShowBrowser] = useState(() => initialSettings.showBrowser ?? false);
   const [enableDetailedLogging, setEnableDetailedLogging] = useState(
@@ -151,7 +156,7 @@ export function ScrapePage() {
   const [exportResult, setExportResult] = useState<ExportResult | null>(
     () => initialRef.current?.exportResult ?? null
   );
-  const [lastScrapeAt, setLastScrapeAt] = useState<StoredLastScrape>(
+  const [lastScrapeAt, setLastScrapeAt] = useState<string | null>(
     () => initialRef.current?.lastScrapeAt ?? null
   );
   const lastScrapeDate = parseDate(lastScrapeAt);
@@ -256,7 +261,6 @@ export function ScrapePage() {
       selectedAccounts.map((name) => ({
         name,
         status: "pending" as const,
-        message: "Pending",
       }))
     );
     setMessages([]);
@@ -266,10 +270,7 @@ export function ScrapePage() {
     setLogsCollapsed(false);
     setCopyStatus("idle");
 
-    const scrapeId =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const scrapeId = crypto.randomUUID();
     scrapeIdRef.current = scrapeId;
 
     const stream = createScrapeStream(
@@ -297,11 +298,11 @@ export function ScrapePage() {
                   if (exists) {
                     return prev.map((a) =>
                       a.name === name
-                        ? { ...a, status: "scraping" as const, message: "Scraping..." }
+                        ? { ...a, status: "scraping" as const }
                         : a
                     );
                   }
-                  return [...prev, { name, status: "scraping" as const, message: "Scraping..." }];
+                  return [...prev, { name, status: "scraping" as const }];
                 });
               }
             }
@@ -314,9 +315,6 @@ export function ScrapePage() {
               const entry: AccountStatus = {
                 name,
                 status: event.success ? "done" : "failed",
-                message: event.success
-                  ? `${event.transactionCount} transactions`
-                  : (event.error ?? "Failed"),
                 transactionCount: event.transactionCount,
                 error: event.error,
               };
@@ -363,8 +361,6 @@ export function ScrapePage() {
         rows: payload.rows,
         outputDir,
         split,
-        scrapeResults: payload.scrapeResults,
-        skipped: payload.skipped,
         auditLog: payload.auditLog,
       });
       setExportResult(result);
@@ -385,6 +381,11 @@ export function ScrapePage() {
     setExportResult(null);
     setError("");
     setCopyStatus("idle");
+  };
+
+  const handleBack = () => {
+    setPhase("settings");
+    setError("");
   };
 
   const handleCancel = async () => {
@@ -408,18 +409,7 @@ export function ScrapePage() {
     if (messages.length === 0) return;
     const text = messages.join("\n");
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const area = document.createElement("textarea");
-        area.value = text;
-        area.style.position = "fixed";
-        area.style.left = "-9999px";
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand("copy");
-        document.body.removeChild(area);
-      }
+      await navigator.clipboard.writeText(text)
       setCopyStatus("copied");
     } catch {
       setCopyStatus("failed");
@@ -442,6 +432,7 @@ export function ScrapePage() {
   };
 
   return (
+    <>
     <div className="space-y-4">
       {phase === "settings" && (
         <Card>
@@ -473,7 +464,6 @@ export function ScrapePage() {
               accountsLoading={accountsLoading}
               accountsError={accountsError}
               onStart={handleStart}
-              disabled={phase === "progress"}
             />
           </CardContent>
         </Card>
@@ -593,20 +583,23 @@ export function ScrapePage() {
                     </CardContent>
                   </Card>
                 )}
-                <Button variant="outline" onClick={handleReset}>
-                  Scrape Again
-                </Button>
+                <div data-testid="sc-again-fixed">
+                  <Button variant="outline" onClick={handleReset}>
+                    Scrape Again
+                  </Button>
+                </div>
               </div>
             </>
           )}
 
-          {!payload && !error && (
-            <Button variant="outline" onClick={handleReset}>
-              Back
+          {!payload && (
+            <Button variant="outline" onClick={handleBack}>
+              Back to settings
             </Button>
           )}
         </div>
       )}
     </div>
+    </>
   );
 }
