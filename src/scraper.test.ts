@@ -49,13 +49,13 @@ describe("scrapeAccount", () => {
 
     mockedCreateScraper.mockReturnValueOnce(firstScraper).mockReturnValueOnce(secondScraper);
 
-    const scrapePromise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, (message) => {
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, (message) => {
       progress.push(message);
     });
 
     await vi.advanceTimersByTimeAsync(3000);
 
-    await expect(scrapePromise).resolves.toMatchObject({
+    await expect(promise).resolves.toMatchObject({
       accountName: "Leumi",
       success: true,
       transactions: [{ accountNumber: "123456", accountName: "Leumi" }],
@@ -80,17 +80,42 @@ describe("scrapeAccount", () => {
 
     mockedCreateScraper.mockReturnValueOnce(firstScraper).mockReturnValueOnce(secondScraper);
 
-    const scrapePromise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false);
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false);
 
     await vi.advanceTimersByTimeAsync(3000);
 
-    await expect(scrapePromise).resolves.toMatchObject({
+    await expect(promise).resolves.toMatchObject({
       accountName: "Leumi",
       success: false,
       transactions: [],
       error: "TIMEOUT: Still timed out",
     });
     expect(mockedCreateScraper).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once after a navigation timeout reported as a generic error", async () => {
+    const progress: string[] = [];
+    const firstScraper = makeScraper({
+      success: false,
+      errorType: "GENERIC",
+      errorMessage: "Navigation timeout of 30000 ms exceeded",
+    });
+    const secondScraper = makeScraper({
+      success: true,
+      accounts: [],
+    });
+
+    mockedCreateScraper.mockReturnValueOnce(firstScraper).mockReturnValueOnce(secondScraper);
+
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, (message) => {
+      progress.push(message);
+    });
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await expect(promise).resolves.toMatchObject({ accountName: "Leumi", success: true });
+    expect(mockedCreateScraper).toHaveBeenCalledTimes(2);
+    expect(progress).toContain("  Timeout scraping Leumi. Retrying in 3 seconds...");
   });
 
   it("does not retry non-timeout scraper failures", async () => {

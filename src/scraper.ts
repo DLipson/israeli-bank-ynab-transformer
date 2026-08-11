@@ -43,7 +43,7 @@ export async function scrapeAccount(
       const result = await scraper.scrape(credentials);
 
       if (!result.success) {
-        if (result.errorType === TIMEOUT_ERROR_TYPE && attempt === 1) {
+        if (attempt === 1 && (result.errorType === TIMEOUT_ERROR_TYPE || isTimeoutMessage(result.errorMessage))) {
           await waitBeforeTimeoutRetry(account.name, onProgress);
           continue;
         }
