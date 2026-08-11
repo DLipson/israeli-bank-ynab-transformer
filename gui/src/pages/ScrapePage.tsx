@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrapeSettings } from "@/components/ScrapeSettings";
 import { ScrapeProgress, type AccountStatus } from "@/components/ScrapeProgress";
+import { ScrapeLogs, type LogEntry } from "@/components/ScrapeLogs";
 import { ScrapeSummary } from "@/components/ScrapeSummary";
 import { TransactionTable } from "@/components/TransactionTable";
 import { SkippedList } from "@/components/SkippedList";
@@ -147,7 +148,7 @@ export function ScrapePage() {
 
   // Progress state
   const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
-  const [messages, setMessages] = useState<string[]>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
 
   // Results state
   const [payload, setPayload] = useState<ScrapePayload | null>(
@@ -271,7 +272,7 @@ export function ScrapePage() {
         status: "pending" as const,
       }))
     );
-    setMessages([]);
+    setEntries([]);
     setPayload(null);
     setExportResult(null);
     setError("");
@@ -292,11 +293,11 @@ export function ScrapePage() {
       (event: SSEEvent) => {
         switch (event.type) {
           case "warning":
-            setMessages((prev) => [...prev, `Warning: ${event.message}`]);
+            setEntries((prev) => [...prev, { text: `Warning: ${event.message}` }]);
             break;
 
           case "progress":
-            setMessages((prev) => [...prev, event.message ?? ""]);
+            setEntries((prev) => [...prev, { text: event.message ?? "", account: event.account }]);
             // Try to detect which account is being worked on
             if (event.message) {
               const scrapeMatch = event.message.match(/^Scraping (.+)\.\.\.$/);
@@ -416,8 +417,8 @@ export function ScrapePage() {
   };
 
   const handleCopyLogs = async () => {
-    if (messages.length === 0) return;
-    const text = messages.join("\n");
+    if (entries.length === 0) return;
+    const text = entries.map((e) => e.text).join("\n");
     try {
       await navigator.clipboard.writeText(text)
       setCopyStatus("copied");
@@ -487,7 +488,7 @@ export function ScrapePage() {
             <CardTitle>Scraping in progress...</CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrapeProgress accounts={accountStatuses} messages={messages} />
+            <ScrapeProgress accounts={accountStatuses} entries={entries} />
             <div className="mt-4">
               <Button variant="outline" onClick={handleCancel}>
                 Cancel Scrape
@@ -515,7 +516,7 @@ export function ScrapePage() {
                 </CardContent>
               </Card>
 
-              {messages.length > 0 && (
+              {entries.length > 0 && (
                 <Card>
                   <Collapsible open={!logsCollapsed} onOpenChange={(open) => setLogsCollapsed(!open)}>
                     <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -542,13 +543,7 @@ export function ScrapePage() {
                     </CardHeader>
                     <CollapsibleContent>
                       <CardContent className="pt-0">
-                        <div className="max-h-64 overflow-y-auto rounded-md bg-muted p-3 text-xs font-mono">
-                          {messages.map((msg, i) => (
-                            <div key={i} className="text-muted-foreground">
-                              {msg}
-                            </div>
-                          ))}
-                        </div>
+                        <ScrapeLogs entries={entries} />
                       </CardContent>
                     </CollapsibleContent>
                   </Collapsible>

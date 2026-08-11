@@ -102,8 +102,8 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
       filteredAccounts,
       config.startDate,
       config.showBrowser,
-      (message: string) => {
-        sendEvent({ type: "progress", message });
+      (message: string, accountName?: string) => {
+        sendEvent({ type: "progress", message, account: accountName });
       },
       abortController.signal,
       { concurrency }

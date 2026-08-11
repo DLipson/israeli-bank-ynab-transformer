@@ -19,9 +19,9 @@ export async function scrapeAccount(
   account: AccountConfig,
   startDate: Date,
   showBrowser: boolean,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string, accountName?: string) => void
 ): Promise<ScrapeResult> {
-  onProgress?.(`\nScraping ${account.name}...`);
+  onProgress?.(`\nScraping ${account.name}...`, account.name);
 
   const options: ScraperOptions = {
     companyId: account.companyId,
@@ -36,7 +36,7 @@ export async function scrapeAccount(
       const scraper = createScraper(options);
 
       scraper.onProgress((companyId, payload) => {
-        onProgress?.(`  [${account.name}] ${payload.type}`);
+        onProgress?.(`  [${account.name}] ${payload.type}`, account.name);
       });
 
       const credentials = account.credentials as Parameters<typeof scraper.scrape>[0];
@@ -48,7 +48,7 @@ export async function scrapeAccount(
           continue;
         }
 
-        onProgress?.(`  Error: ${result.errorType} - ${result.errorMessage}`);
+        onProgress?.(`  Error: ${result.errorType} - ${result.errorMessage}`, account.name);
         return {
           accountName: account.name,
           success: false,
@@ -61,7 +61,7 @@ export async function scrapeAccount(
       const transactions: EnrichedTransaction[] = [];
 
       for (const bankAccount of result.accounts ?? []) {
-        onProgress?.(`  Found ${bankAccount.txns.length} transactions in account ${bankAccount.accountNumber}`);
+        onProgress?.(`  Found ${bankAccount.txns.length} transactions in account ${bankAccount.accountNumber}`, account.name);
 
         for (const txn of bankAccount.txns) {
           transactions.push({
@@ -72,7 +72,7 @@ export async function scrapeAccount(
         }
       }
 
-      onProgress?.(`  Total: ${transactions.length} transactions from ${account.name}`);
+      onProgress?.(`  Total: ${transactions.length} transactions from ${account.name}`, account.name);
 
       return {
         accountName: account.name,
@@ -86,7 +86,7 @@ export async function scrapeAccount(
         continue;
       }
 
-      onProgress?.(`  Exception: ${message}`);
+      onProgress?.(`  Exception: ${message}`, account.name);
       return {
         accountName: account.name,
         success: false,
@@ -99,15 +99,15 @@ export async function scrapeAccount(
   throw new Error(`Unexpected scrape retry state for ${account.name}`);
 }
 
-function isTimeoutMessage(message: string): boolean {
-  return message.toLowerCase().includes("timeout");
+function isTimeoutMessage(message: string | undefined): boolean {
+  return (message ?? "").toLowerCase().includes("timeout");
 }
 
 async function waitBeforeTimeoutRetry(
   accountName: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string, accountName?: string) => void
 ): Promise<void> {
-  onProgress?.(`  Timeout scraping ${accountName}. Retrying in 3 seconds...`);
+  onProgress?.(`  Timeout scraping ${accountName}. Retrying in 3 seconds...`, accountName);
   await new Promise((resolve) => setTimeout(resolve, TIMEOUT_RETRY_DELAY_MS));
 }
 
@@ -118,7 +118,7 @@ export async function scrapeAllAccounts(
   accounts: AccountConfig[],
   startDate: Date,
   showBrowser: boolean,
-  onProgress?: (message: string) => void,
+  onProgress?: (message: string, accountName?: string) => void,
   abortSignal?: AbortSignal,
   options?: {
     concurrency?: number;

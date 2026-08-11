@@ -1,5 +1,6 @@
 ﻿import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ScrapeLogs, type LogEntry } from "@/components/ScrapeLogs";
 
 export interface AccountStatus {
   name: string;
@@ -10,10 +11,10 @@ export interface AccountStatus {
 
 interface ScrapeProgressProps {
   accounts: AccountStatus[];
-  messages: string[];
+  entries: LogEntry[];
 }
 
-export function ScrapeProgress({ accounts, messages }: ScrapeProgressProps) {
+export function ScrapeProgress({ accounts, entries }: ScrapeProgressProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -49,13 +50,7 @@ export function ScrapeProgress({ accounts, messages }: ScrapeProgressProps) {
         ))}
       </div>
 
-      {messages.length > 0 && (
-        <div className="max-h-40 overflow-y-auto rounded-md bg-muted p-3 text-xs font-mono">
-          {messages.map((msg, i) => (
-            <div key={i} className="text-muted-foreground">{msg}</div>
-          ))}
-        </div>
-      )}
+      {entries.length > 0 && <ScrapeLogs entries={entries} />}
     </div>
   );
 }

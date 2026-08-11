@@ -41,6 +41,7 @@ export interface ScrapePayload {
 export interface SSEEvent {
   type: "warning" | "progress" | "account-done" | "done" | "error";
   message?: string;
+  account?: string;
   accountName?: string;
   success?: boolean;
   transactionCount?: number;
