@@ -267,11 +267,11 @@ export function ScrapePage() {
     }
   }, [accounts, accountsError, accountsLoading, selectedAccounts]);
 
-  const handleYnabImport = useCallback(async (rows: YnabRow[]) => {
+  const handleYnabImport = useCallback(async (rows: YnabRow[], runId?: string) => {
     setYnabImporting(true);
     setError("");
     try {
-      setYnabResult(await importToYnab(rows));
+      setYnabResult(await importToYnab(rows, runId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "YNAB import failed");
     } finally {
@@ -365,7 +365,7 @@ export function ScrapePage() {
                 setLastScrapeAt(nextLastScrapeAt);
               }
               if (autoYnabImport) {
-                void handleYnabImport(event.payload.rows);
+                void handleYnabImport(event.payload.rows, event.payload.runId);
               }
             }
             setPhase("results");
@@ -400,6 +400,7 @@ export function ScrapePage() {
         outputDir,
         split,
         auditLog: payload.auditLog,
+        runId: payload.runId,
       });
       setExportResult(result);
     } catch (e) {
@@ -610,7 +611,7 @@ export function ScrapePage() {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => handleYnabImport(payload.rows)}
+                  onClick={() => handleYnabImport(payload.rows, payload.runId)}
                   disabled={ynabImporting}
                 >
                   {ynabImporting ? "Sending..." : "Send to YNAB"}

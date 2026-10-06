@@ -36,6 +36,7 @@ export interface ScrapePayload {
   rows: YnabRow[];
   summary: TransactionSummary;
   auditLog: Record<string, unknown>;
+  runId?: string;
 }
 
 export interface SSEEvent {
@@ -137,6 +138,7 @@ export async function exportCSV(body: {
   outputDir: string;
   split: boolean;
   auditLog: Record<string, unknown>;
+  runId?: string;
 }): Promise<{ csvPaths: string[]; auditLogPath: string }> {
   return request("/export", { method: "POST", body: JSON.stringify(body) });
 }
@@ -182,8 +184,8 @@ export async function saveYnabImportConfig(config: YnabImportConfig): Promise<Yn
   return request("/ynab/import-config", { method: "PUT", body: JSON.stringify(config) });
 }
 
-export async function importToYnab(rows: YnabRow[]): Promise<YnabImportResult> {
-  return request("/ynab/import", { method: "POST", body: JSON.stringify({ rows }) });
+export async function importToYnab(rows: YnabRow[], runId?: string): Promise<YnabImportResult> {
+  return request("/ynab/import", { method: "POST", body: JSON.stringify({ rows, runId }) });
 }
 
 export async function getYnabTokenStatus(): Promise<{ saved: boolean }> {
@@ -192,4 +194,30 @@ export async function getYnabTokenStatus(): Promise<{ saved: boolean }> {
 
 export async function saveYnabToken(token: string): Promise<{ saved: boolean }> {
   return request("/ynab/token", { method: "PUT", body: JSON.stringify({ token }) });
+}
+
+// --- History ---
+
+export interface RunSummary {
+  id: string;
+  createdAt: string;
+  settings: { daysBack: number; accounts: string[] };
+  accounts: Array<{ accountName: string; success: boolean; transactionCount: number; error?: string }>;
+  exports: Array<{ at: string; csvPaths: string[]; auditLogPath: string }>;
+  ynabImports: Array<{ at: string } & YnabImportResult>;
+  rowCount: number;
+  totalOutflow: number;
+  totalInflow: number;
+}
+
+export type RunRecord = Omit<RunSummary, "rowCount" | "totalOutflow" | "totalInflow"> & {
+  payload: ScrapePayload;
+};
+
+export async function getRuns(): Promise<RunSummary[]> {
+  return (await request<{ runs: RunSummary[] }>("/history")).runs;
+}
+
+export async function getRun(id: string): Promise<RunRecord> {
+  return request(`/history/${encodeURIComponent(id)}`);
 }

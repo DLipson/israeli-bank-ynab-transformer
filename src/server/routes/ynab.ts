@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { updateRun } from "../../history.js";
 import { ensureAppConfigDirExists, getEnvFilePath, loadAppEnv } from "../../env.js";
 import { clearEnvVars, writeEnvFile } from "../env-io.js";
 import {
@@ -86,9 +87,17 @@ router.put(
 router.post(
   "/import",
   handle(async (req) => {
-    const { rows } = req.body as { rows?: YnabRow[] };
+    const { rows, runId } = req.body as { rows?: YnabRow[]; runId?: string };
     if (!Array.isArray(rows)) throw new Error("Missing rows.");
-    return importRowsToYnab(token(), loadYnabImportConfig(), rows);
+    const result = await importRowsToYnab(token(), loadYnabImportConfig(), rows);
+    if (runId) {
+      try {
+        updateRun(runId, (run) => run.ynabImports.push({ at: new Date().toISOString(), ...result }));
+      } catch {
+        // History is a record only; the import itself succeeded.
+      }
+    }
+    return result;
   })
 );
 

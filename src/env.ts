@@ -31,6 +31,10 @@ export function getYnabImportConfigPath(): string {
   return join(getAppConfigDir(), "ynab-import.json");
 }
 
+export function getHistoryDir(): string {
+  return join(getAppConfigDir(), "history");
+}
+
 export function ensureAppConfigDirExists(): string {
   const dir = getAppConfigDir();
   if (!existsSync(dir)) {

@@ -16,6 +16,7 @@ import {
 import { toCSV, generateFilename } from "../../csv-writer.js";
 import { createAuditLogger, formatAuditLog, type AuditLog } from "../../audit-logger.js";
 import { getRowSource, recordYnabSources } from "../../ynab/import-service.js";
+import { saveRun, updateRun } from "../../history.js";
 
 const router = Router();
 const activeScrapes = new Map<string, AbortController>();
@@ -179,15 +180,25 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
       totalInflow: summary.totalInflow,
     };
 
-    sendEvent({
-      type: "done",
-      payload: {
-        skipped,
-        rows,
-        summary: summaryObj,
-        auditLog: auditLogger.getLog(),
-      },
-    });
+    const payload = { skipped, rows, summary: summaryObj, auditLog: auditLogger.getLog() };
+    let runId: string | undefined;
+    try {
+      runId = saveRun({
+        settings: { daysBack, accounts: enabledAccounts.map((a) => a.name) },
+        accounts: results.map(({ accountName, success, transactions, error }) => ({
+          accountName,
+          success,
+          transactionCount: transactions.length,
+          error,
+        })),
+        payload,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendEvent({ type: "warning", message: `Could not save scrape history: ${message}` });
+    }
+
+    sendEvent({ type: "done", payload: { ...payload, runId } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     sendEvent({ type: "error", message });
@@ -226,11 +237,12 @@ router.post("/scrape/cancel", (req: Request, res: Response) => {
  * Writes CSV files and audit log to disk.
  */
 router.post("/export", (req: Request, res: Response) => {
-  const { rows, outputDir, split, auditLog } = req.body as {
+  const { rows, outputDir, split, auditLog, runId } = req.body as {
     rows: YnabRow[];
     outputDir: string;
     split: boolean;
     auditLog: AuditLog;
+    runId?: string;
   };
 
   if (!rows || !outputDir || !auditLog) {
@@ -295,6 +307,16 @@ router.post("/export", (req: Request, res: Response) => {
     const logFilename = `run-${logToSave.timestamp.replace(/:/g, "-").replace(/\.\d{3}Z$/, "")}.log`;
     const logPath = join(logDir, logFilename);
     writeFileSync(logPath, formatAuditLog(logToSave), "utf-8");
+
+    if (runId) {
+      try {
+        updateRun(runId, (run) => {
+          run.exports.push({ at: new Date().toISOString(), csvPaths, auditLogPath: logPath });
+        });
+      } catch {
+        // History is a record only; the export itself succeeded.
+      }
+    }
 
     res.json({ csvPaths, auditLogPath: logPath });
   } catch (error) {
