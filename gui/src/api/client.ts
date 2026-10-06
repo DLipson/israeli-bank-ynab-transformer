@@ -185,3 +185,11 @@ export async function saveYnabImportConfig(config: YnabImportConfig): Promise<Yn
 export async function importToYnab(rows: YnabRow[]): Promise<YnabImportResult> {
   return request("/ynab/import", { method: "POST", body: JSON.stringify({ rows }) });
 }
+
+export async function getYnabTokenStatus(): Promise<{ saved: boolean }> {
+  return request("/ynab/token");
+}
+
+export async function saveYnabToken(token: string): Promise<{ saved: boolean }> {
+  return request("/ynab/token", { method: "PUT", body: JSON.stringify({ token }) });
+}

@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   getYnabAccounts,
   getYnabBudgets,
   getYnabImportConfig,
+  getYnabTokenStatus,
   saveYnabImportConfig,
+  saveYnabToken,
   type YnabImportConfig,
   type YnabOption,
 } from "@/api/client";
@@ -18,29 +21,57 @@ export function YnabPage() {
   const [budgets, setBudgets] = useState<YnabOption[]>([]);
   const [ynabAccounts, setYnabAccounts] = useState<YnabOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tokenSaved, setTokenSaved] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [savingToken, setSavingToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
+  const loadBudgets = async () => {
+    setError("");
+    try {
+      setBudgets(await getYnabBudgets());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load YNAB budgets");
+    }
+  };
+
   useEffect(() => {
-    Promise.all([getYnabImportConfig(), getYnabBudgets()])
-      .then(([loadedConfig, loadedBudgets]) => {
+    Promise.all([getYnabImportConfig(), getYnabTokenStatus()])
+      .then(async ([loadedConfig, token]) => {
         setConfig(loadedConfig);
-        setBudgets(loadedBudgets);
+        setTokenSaved(token.saved);
+        if (token.saved) await loadBudgets();
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load YNAB settings"))
       .finally(() => setLoading(false));
   }, []);
 
+  const handleSaveToken = async () => {
+    setSavingToken(true);
+    setError("");
+    try {
+      await saveYnabToken(tokenInput);
+      setTokenSaved(true);
+      setTokenInput("");
+      await loadBudgets();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save token");
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
   useEffect(() => {
-    if (!config.budgetId) {
+    if (!config.budgetId || !tokenSaved) {
       setYnabAccounts([]);
       return;
     }
     getYnabAccounts(config.budgetId)
       .then(setYnabAccounts)
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load YNAB accounts"));
-  }, [config.budgetId]);
+  }, [config.budgetId, tokenSaved]);
 
   const setBudget = (budgetId: string) => {
     // Account ids belong to one budget, so a budget change clears the mappings.
@@ -88,11 +119,33 @@ export function YnabPage() {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="space-y-2">
+          <Label htmlFor="ynab-token">
+            API token {tokenSaved && <span className="text-green-600">(saved)</span>}
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="ynab-token"
+              type="password"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              placeholder={tokenSaved ? "Enter a new token to replace it" : "Paste your YNAB token"}
+            />
+            <Button onClick={handleSaveToken} disabled={savingToken || !tokenInput.trim()}>
+              {savingToken ? "Saving..." : "Save token"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Create one in YNAB: Account Settings → Developer Settings → New Token.
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="ynab-budget">Budget</Label>
           <select
             id="ynab-budget"
             className={selectClass}
             value={config.budgetId}
+            disabled={!tokenSaved}
             onChange={(e) => setBudget(e.target.value)}
           >
             <option value="">Select a budget</option>

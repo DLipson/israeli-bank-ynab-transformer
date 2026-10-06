@@ -1,5 +1,11 @@
 import { Router, type Request, type Response } from "express";
-import { loadAppEnv } from "../../env.js";
+import { ensureAppConfigDirExists, getEnvFilePath, loadAppEnv } from "../../env.js";
+import { clearEnvVars, writeEnvFile } from "../env-io.js";
+import {
+  isWindowsCredentialManagerAvailable,
+  saveBankCredentialsToWindowsCredentialManager,
+  YNAB_TOKEN_ENV_VAR,
+} from "../../windows-credential-manager.js";
 import type { YnabRow } from "../../transformer.js";
 import {
   fetchYnabAccounts,
@@ -27,6 +33,33 @@ function token(): string {
   loadAppEnv({ override: true });
   return getYnabToken();
 }
+
+router.get(
+  "/token",
+  handle(() => {
+    loadAppEnv({ override: true });
+    return { saved: Boolean(process.env[YNAB_TOKEN_ENV_VAR]?.trim()) };
+  })
+);
+
+router.put(
+  "/token",
+  handle((req) => {
+    const { token: value } = req.body as { token?: unknown };
+    if (typeof value !== "string" || !value.trim()) throw new Error("Token is required.");
+
+    const updates = { [YNAB_TOKEN_ENV_VAR]: value.trim() };
+    ensureAppConfigDirExists();
+    if (isWindowsCredentialManagerAvailable()) {
+      saveBankCredentialsToWindowsCredentialManager(updates);
+      clearEnvVars(getEnvFilePath(), [YNAB_TOKEN_ENV_VAR]);
+    } else {
+      writeEnvFile(getEnvFilePath(), updates);
+    }
+    loadAppEnv({ override: true });
+    return { saved: true };
+  })
+);
 
 router.get("/budgets", handle(async () => ({ budgets: await fetchYnabBudgets(token()) })));
 

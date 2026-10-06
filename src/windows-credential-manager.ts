@@ -19,8 +19,11 @@ export function isWindowsCredentialManagerAvailable(): boolean {
   return process.platform === "win32" && existsSync(SCRIPT_PATH);
 }
 
+export const YNAB_TOKEN_ENV_VAR = "YNAB_API_TOKEN";
+
 export function getBankCredentialEnvVars(): string[] {
-  const keys = new Set<string>();
+  // ponytail: the YNAB token is not a bank credential, but it uses the same secure storage.
+  const keys = new Set<string>([YNAB_TOKEN_ENV_VAR]);
   for (const bank of BANK_DEFINITIONS) {
     for (const envVar of Object.values(bank.credentialFields)) {
       keys.add(envVar);
