@@ -141,6 +141,15 @@ For category report preview:
 3. Optional: keep using repo-local `config/category-report.json` by setting `YNAB_CATEGORY_REPORT_CONFIG`.
 4. Set `YNAB_REPORT_RECIPIENT_EMAIL`, `GMAIL_SMTP_USER`, and `GMAIL_SMTP_APP_PASSWORD`.
 
+For direct import to YNAB (no CSV):
+
+1. Set `YNAB_API_TOKEN` in `~/.config/israeli-bank-ynab-transformer/.env`.
+2. Run one scrape. Each source (for example `Max - 1234`) is added to the YNAB tab.
+3. In the YNAB tab, select the budget and a YNAB account for each source. Click Save. The mapping is stored in `~/.config/israeli-bank-ynab-transformer/ynab-import.json`.
+4. After a scrape, click **Send to YNAB**, or turn on **Send to YNAB after scrape**.
+
+Pending transactions are skipped. Transactions are sent as cleared and unapproved. YNAB rejects duplicates, so a repeated scrape of the same dates is safe.
+
 ## Quick Start (GUI)
 
 ```bash

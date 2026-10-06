@@ -54,7 +54,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => {
+    throw new Error(`Server returned ${res.status} (not JSON) for ${path}. Restart the server if it is outdated.`);
+  });
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data as T;
 }
@@ -144,3 +146,42 @@ export async function openPath(path: string): Promise<{ path: string }> {
 }
 
 
+
+// --- YNAB ---
+
+export interface YnabOption {
+  id: string;
+  name: string;
+}
+
+export interface YnabImportConfig {
+  budgetId: string;
+  mappings: Record<string, string>;
+}
+
+export interface YnabImportResult {
+  imported: number;
+  duplicates: number;
+  unmapped: string[];
+}
+
+export async function getYnabBudgets(): Promise<YnabOption[]> {
+  return (await request<{ budgets: YnabOption[] }>("/ynab/budgets")).budgets;
+}
+
+export async function getYnabAccounts(budgetId: string): Promise<YnabOption[]> {
+  return (await request<{ accounts: YnabOption[] }>(`/ynab/budgets/${encodeURIComponent(budgetId)}/accounts`))
+    .accounts;
+}
+
+export async function getYnabImportConfig(): Promise<YnabImportConfig> {
+  return request("/ynab/import-config");
+}
+
+export async function saveYnabImportConfig(config: YnabImportConfig): Promise<YnabImportConfig> {
+  return request("/ynab/import-config", { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function importToYnab(rows: YnabRow[]): Promise<YnabImportResult> {
+  return request("/ynab/import", { method: "POST", body: JSON.stringify({ rows }) });
+}

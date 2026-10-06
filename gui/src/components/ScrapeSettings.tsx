@@ -13,6 +13,8 @@ interface ScrapeSettingsProps {
   setSplit: (v: boolean) => void;
   showBrowser: boolean;
   setShowBrowser: (v: boolean) => void;
+  autoYnabImport: boolean;
+  setAutoYnabImport: (v: boolean) => void;
   enableDetailedLogging: boolean;
   setEnableDetailedLogging: (v: boolean) => void;
   detailedLoggingLimit: number;
@@ -36,6 +38,8 @@ export function ScrapeSettings({
   setSplit,
   showBrowser,
   setShowBrowser,
+  autoYnabImport,
+  setAutoYnabImport,
   enableDetailedLogging,
   setEnableDetailedLogging,
   detailedLoggingLimit,
@@ -88,6 +92,10 @@ export function ScrapeSettings({
         <div className="flex items-center gap-2">
           <Switch id="showBrowser" checked={showBrowser} onCheckedChange={setShowBrowser} />
           <Label htmlFor="showBrowser">Show browser</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch id="autoYnabImport" checked={autoYnabImport} onCheckedChange={setAutoYnabImport} />
+          <Label htmlFor="autoYnabImport">Send to YNAB after scrape</Label>
         </div>
       </div>
 

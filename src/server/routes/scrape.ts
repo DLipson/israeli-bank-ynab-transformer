@@ -15,6 +15,7 @@ import {
 } from "../../transformer.js";
 import { toCSV, generateFilename } from "../../csv-writer.js";
 import { createAuditLogger, formatAuditLog, type AuditLog } from "../../audit-logger.js";
+import { getRowSource, recordYnabSources } from "../../ynab/import-service.js";
 
 const router = Router();
 const activeScrapes = new Map<string, AbortController>();
@@ -159,6 +160,13 @@ router.get("/scrape/stream", async (req: Request, res: Response) => {
 
     // Sort by date descending (newest first)
     rows.sort((a, b) => b.date.localeCompare(a.date));
+
+    try {
+      recordYnabSources([...new Set(rows.map(getRowSource))]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendEvent({ type: "warning", message: `Could not record YNAB sources: ${message}` });
+    }
     const summary = calculateSummary(kept);
 
     // Record scrape results in audit logger
@@ -241,13 +249,7 @@ router.post("/export", (req: Request, res: Response) => {
       // Group rows by their source account (parse from memo JSON)
       const byAccount = new Map<string, YnabRow[]>();
       for (const row of rows) {
-        let account = "unknown";
-        try {
-          const memo = JSON.parse(row.memo);
-          if (memo.source) account = memo.source;
-        } catch {
-          // ignore
-        }
+        const account = getRowSource(row);
         const list = byAccount.get(account) ?? [];
         list.push(row);
         byAccount.set(account, list);

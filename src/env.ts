@@ -27,6 +27,10 @@ export function getCategoryReportConfigPath(): string {
   return join(getAppConfigDir(), "category-report.json");
 }
 
+export function getYnabImportConfigPath(): string {
+  return join(getAppConfigDir(), "ynab-import.json");
+}
+
 export function ensureAppConfigDirExists(): string {
   const dir = getAppConfigDir();
   if (!existsSync(dir)) {

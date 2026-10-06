@@ -14,7 +14,10 @@ import {
   openPath,
   getAccounts,
   cancelScrape,
+  importToYnab,
   type ScrapePayload,
+  type YnabImportResult,
+  type YnabRow,
   type SSEEvent,
   type AccountInfo,
 } from "@/api/client";
@@ -26,6 +29,7 @@ type StoredSettings = {
   outputDir: string;
   split: boolean;
   showBrowser: boolean;
+  autoYnabImport: boolean;
   enableDetailedLogging: boolean;
   detailedLoggingLimit: number;
   concurrency: number;
@@ -132,6 +136,7 @@ export function ScrapePage() {
   const [outputDir, setOutputDir] = useState(() => `./output/${formatTimestamp()}`);
   const [split, setSplit] = useState(() => initialSettings.split ?? false);
   const [showBrowser, setShowBrowser] = useState(() => initialSettings.showBrowser ?? false);
+  const [autoYnabImport, setAutoYnabImport] = useState(() => initialSettings.autoYnabImport ?? false);
   const [enableDetailedLogging, setEnableDetailedLogging] = useState(
     () => initialSettings.enableDetailedLogging ?? false
   );
@@ -156,6 +161,8 @@ export function ScrapePage() {
   );
   const [exporting, setExporting] = useState(false);
   const [openingOutput, setOpeningOutput] = useState(false);
+  const [ynabImporting, setYnabImporting] = useState(false);
+  const [ynabResult, setYnabResult] = useState<YnabImportResult | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(
     () => initialRef.current?.exportResult ?? null
   );
@@ -201,6 +208,7 @@ export function ScrapePage() {
       outputDir,
       split,
       showBrowser,
+      autoYnabImport,
       enableDetailedLogging,
       detailedLoggingLimit,
       concurrency,
@@ -211,6 +219,7 @@ export function ScrapePage() {
     outputDir,
     split,
     showBrowser,
+    autoYnabImport,
     enableDetailedLogging,
     detailedLoggingLimit,
     concurrency,
@@ -258,6 +267,18 @@ export function ScrapePage() {
     }
   }, [accounts, accountsError, accountsLoading, selectedAccounts]);
 
+  const handleYnabImport = useCallback(async (rows: YnabRow[]) => {
+    setYnabImporting(true);
+    setError("");
+    try {
+      setYnabResult(await importToYnab(rows));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "YNAB import failed");
+    } finally {
+      setYnabImporting(false);
+    }
+  }, []);
+
   const handleStart = useCallback(() => {
     if (selectedAccounts.length === 0) {
       setError("Select at least one account to scrape.");
@@ -275,6 +296,7 @@ export function ScrapePage() {
     setEntries([]);
     setPayload(null);
     setExportResult(null);
+    setYnabResult(null);
     setError("");
     setLogsCollapsed(false);
     setCopyStatus("idle");
@@ -342,6 +364,9 @@ export function ScrapePage() {
               if (nextLastScrapeAt) {
                 setLastScrapeAt(nextLastScrapeAt);
               }
+              if (autoYnabImport) {
+                void handleYnabImport(event.payload.rows);
+              }
             }
             setPhase("results");
             break;
@@ -357,6 +382,8 @@ export function ScrapePage() {
   }, [
     daysBack,
     showBrowser,
+    autoYnabImport,
+    handleYnabImport,
     enableDetailedLogging,
     detailedLoggingLimit,
     concurrency,
@@ -390,6 +417,7 @@ export function ScrapePage() {
     setPhase("settings");
     setPayload(null);
     setExportResult(null);
+    setYnabResult(null);
     setError("");
     setCopyStatus("idle");
   };
@@ -465,6 +493,8 @@ export function ScrapePage() {
               setSplit={setSplit}
               showBrowser={showBrowser}
               setShowBrowser={setShowBrowser}
+              autoYnabImport={autoYnabImport}
+              setAutoYnabImport={setAutoYnabImport}
               enableDetailedLogging={enableDetailedLogging}
               setEnableDetailedLogging={setEnableDetailedLogging}
               detailedLoggingLimit={detailedLoggingLimit}
@@ -562,7 +592,29 @@ export function ScrapePage() {
                 </CardContent>
               </Card>
 
+              {ynabResult && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-sm text-green-600 font-medium">
+                      YNAB: {ynabResult.imported} imported, {ynabResult.duplicates} already in YNAB.
+                    </p>
+                    {ynabResult.unmapped.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Not mapped (map them in the YNAB tab): {ynabResult.unmapped.join(", ")}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => handleYnabImport(payload.rows)}
+                  disabled={ynabImporting}
+                >
+                  {ynabImporting ? "Sending..." : "Send to YNAB"}
+                </Button>
                 {!exportResult ? (
                   <Button onClick={handleExport} disabled={exporting}>
                     {exporting ? "Exporting..." : "Export CSV"}

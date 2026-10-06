@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { ScrapePage } from "@/pages/ScrapePage";
+import { YnabPage } from "@/pages/YnabPage";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <TabsList className="mb-4">
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="scrape">Scrape</TabsTrigger>
+          <TabsTrigger value="ynab">YNAB</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts">
@@ -19,6 +21,10 @@ export default function App() {
 
         <TabsContent value="scrape">
           <ScrapePage />
+        </TabsContent>
+
+        <TabsContent value="ynab">
+          <YnabPage />
         </TabsContent>
       </Tabs>
     </div>
