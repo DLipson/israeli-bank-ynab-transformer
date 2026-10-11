@@ -3,6 +3,7 @@ import accountsRouter from "./routes/accounts.js";
 import scrapeRouter from "./routes/scrape.js";
 import ynabRouter from "./routes/ynab.js";
 import historyRouter from "./routes/history.js";
+import categorizeRouter from "./routes/categorize.js";
 import { loadAppEnv } from "../env.js";
 
 const app = express();
@@ -16,6 +17,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use("/api/accounts", accountsRouter);
 app.use("/api/ynab", ynabRouter);
 app.use("/api/history", historyRouter);
+app.use("/api/categorize", categorizeRouter);
 app.use("/api", scrapeRouter);
 
 // Health check

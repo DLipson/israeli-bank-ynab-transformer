@@ -114,7 +114,7 @@ export function getYnabToken(): string {
   return token;
 }
 
-async function ynabRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+export async function ynabRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${YNAB_API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

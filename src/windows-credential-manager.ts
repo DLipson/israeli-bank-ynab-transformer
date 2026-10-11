@@ -20,10 +20,11 @@ export function isWindowsCredentialManagerAvailable(): boolean {
 }
 
 export const YNAB_TOKEN_ENV_VAR = "YNAB_API_TOKEN";
+export const SERPER_KEY_ENV_VAR = "SERPER_API_KEY";
 
 export function getBankCredentialEnvVars(): string[] {
-  // ponytail: the YNAB token is not a bank credential, but it uses the same secure storage.
-  const keys = new Set<string>([YNAB_TOKEN_ENV_VAR]);
+  // ponytail: the YNAB token and Serper key are not bank credentials, but use the same secure storage.
+  const keys = new Set<string>([YNAB_TOKEN_ENV_VAR, SERPER_KEY_ENV_VAR]);
   for (const bank of BANK_DEFINITIONS) {
     for (const envVar of Object.values(bank.credentialFields)) {
       keys.add(envVar);
