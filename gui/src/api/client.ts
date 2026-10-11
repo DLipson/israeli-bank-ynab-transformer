@@ -221,3 +221,64 @@ export async function getRuns(): Promise<RunSummary[]> {
 export async function getRun(id: string): Promise<RunRecord> {
   return request(`/history/${encodeURIComponent(id)}`);
 }
+
+// --- Categorize ---
+
+export type Evidence = "history" | "sector" | "name" | "memo" | "web";
+
+export interface CategorySuggestion {
+  categoryId: string;
+  categoryName: string;
+  evidence: Evidence;
+  note: string;
+  source?: string;
+  share?: number;
+}
+
+export interface CategoryOption {
+  id: string;
+  name: string;
+  group: string;
+}
+
+export interface CategorizeItem {
+  id: string;
+  date: string;
+  amount: number;
+  payee: string;
+  account: string;
+  bankText: string;
+  handNote: string;
+  merchant: string;
+  sector: string;
+  kind: "person" | "cash" | "other";
+  suggestions: CategorySuggestion[];
+  llm: boolean;
+}
+
+/** sync=false reuses the server's last YNAB sync (for a change of days). */
+export async function getCategorizeList(
+  days = 31,
+  sync = true
+): Promise<{ items: CategorizeItem[]; categories: CategoryOption[]; searchKeySaved: boolean }> {
+  return request(`/categorize?days=${days}${sync ? "" : "&sync=0"}`);
+}
+
+export async function getLlmSuggestions(ids: string[]): Promise<Record<string, CategorySuggestion[]>> {
+  return (await request<{ suggestions: Record<string, CategorySuggestion[]> }>("/categorize/llm", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  })).suggestions;
+}
+
+export async function acceptCategory(id: string, categoryId: string): Promise<void> {
+  await request("/categorize/accept", { method: "POST", body: JSON.stringify({ id, categoryId }) });
+}
+
+export async function rejectCategory(id: string, categoryId: string): Promise<void> {
+  await request("/categorize/reject", { method: "POST", body: JSON.stringify({ id, categoryId }) });
+}
+
+export async function saveSearchKey(key: string): Promise<void> {
+  await request("/categorize/search-key", { method: "PUT", body: JSON.stringify({ key }) });
+}

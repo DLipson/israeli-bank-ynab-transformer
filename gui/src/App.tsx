@@ -3,6 +3,7 @@ import { AccountsPage } from "@/pages/AccountsPage";
 import { ScrapePage } from "@/pages/ScrapePage";
 import { YnabPage } from "@/pages/YnabPage";
 import { HistoryPage } from "@/pages/HistoryPage";
+import { CategorizePage } from "@/pages/CategorizePage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <TabsTrigger value="scrape">Scrape</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="ynab">YNAB</TabsTrigger>
+          <TabsTrigger value="categorize">Categorize</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts">
@@ -31,6 +33,10 @@ export default function App() {
 
         <TabsContent value="ynab">
           <YnabPage />
+        </TabsContent>
+
+        <TabsContent value="categorize">
+          <CategorizePage />
         </TabsContent>
       </Tabs>
     </div>
