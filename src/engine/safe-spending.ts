@@ -1,0 +1,495 @@
+/**
+ * Safe-spending engine: pure calculations over one snapshot of YNAB data and the user's settings.
+ * Spec: docs/financial-intelligence-notes.md, "Safe-spending spec". Amounts are YNAB milliunits.
+ * Fixed payments are YNAB scheduled transactions; the engine also suggests new ones from history.
+ * The I/O (YNAB, cache, settings file) is in safe-spending-service.ts.
+ */
+import { identityKey, parseBankText, readMemo, type YnabTransaction } from "../ynab/categorize.js";
+
+export interface Account {
+  id: string;
+  name: string;
+  type: string;
+  balance: number;
+  on_budget: boolean;
+  closed: boolean;
+  deleted: boolean;
+}
+
+export interface MonthCategory {
+  id: string;
+  name: string;
+  category_group_name: string;
+  balance: number;
+  hidden: boolean;
+  deleted: boolean;
+}
+
+export interface Month {
+  month: string;
+  to_be_budgeted: number;
+  categories: MonthCategory[];
+}
+
+export type Frequency =
+  | "never"
+  | "daily"
+  | "weekly"
+  | "everyOtherWeek"
+  | "twiceAMonth"
+  | "every4Weeks"
+  | "monthly"
+  | "everyOtherMonth"
+  | "every3Months"
+  | "every4Months"
+  | "twiceAYear"
+  | "yearly"
+  | "everyOtherYear";
+
+export interface ScheduledTransaction {
+  id: string;
+  date_next: string;
+  frequency: Frequency;
+  amount: number;
+  account_id: string;
+  payee_name: string | null;
+  category_name: string | null;
+  deleted: boolean;
+}
+
+export interface CreditLimitGroup {
+  name: string;
+  limit: number;
+  accountIds: string[];
+}
+
+export interface Settings {
+  mode: "cashflow" | "ynab";
+  /** "month-end", or a day of the month (1-31). */
+  periodEnd: "month-end" | number;
+  buffer: number;
+  /** Mode B. Empty = every spending category. */
+  flexibleCategoryIds: string[];
+  creditLimits: CreditLimitGroup[];
+  /** The checking account whose balance is the overdraft limit ("Credit Limit"), and the overdrawn account. */
+  overdraft: { limitAccountId: string; accountId: string } | null;
+  /** Suggested scheduled transactions the user ignored, as "accountId|identityKey". */
+  ignoredSuggestions: string[];
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  mode: "cashflow",
+  periodEnd: "month-end",
+  buffer: 0,
+  flexibleCategoryIds: [],
+  creditLimits: [],
+  overdraft: null,
+  ignoredSuggestions: [],
+};
+
+export interface Snapshot {
+  today: string;
+  accounts: Account[];
+  month: Month;
+  transactions: YnabTransaction[];
+  scheduled: ScheduledTransaction[];
+  settings: Settings;
+}
+
+export interface Line {
+  label: string;
+  amount: number;
+}
+
+export interface LeftToSpend {
+  total: number;
+  lines: Line[];
+  warnings: string[];
+}
+
+// --- Dates (ISO yyyy-mm-dd, no time zones) ---
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function iso(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parts(date: string): [number, number, number] {
+  const [y, m, d] = date.split("-").map(Number);
+  return [y, m, d];
+}
+
+/** The date in the given month for a day of month, clamped to the month's last day (31 → 30 Nov). */
+function dayIn(year: number, month: number, day: number): string {
+  return iso(year, month, Math.min(day, daysInMonth(year, month)));
+}
+
+function addMonths(year: number, month: number, n: number): [number, number] {
+  const index = year * 12 + (month - 1) + n;
+  return [Math.floor(index / 12), (index % 12) + 1];
+}
+
+function addDays(date: string, n: number): string {
+  const [y, m, d] = parts(date);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+export function periodEndDate(today: string, periodEnd: Settings["periodEnd"]): string {
+  const [y, m, d] = parts(today);
+  if (periodEnd === "month-end") return dayIn(y, m, 31);
+  if (periodEnd >= d) return dayIn(y, m, periodEnd);
+  const [ny, nm] = addMonths(y, m, 1);
+  return dayIn(ny, nm, periodEnd);
+}
+
+// --- Scheduled transactions ---
+
+const MONTH_STEPS: Partial<Record<Frequency, number>> = {
+  monthly: 1,
+  everyOtherMonth: 2,
+  every3Months: 3,
+  every4Months: 4,
+  twiceAYear: 6,
+  yearly: 12,
+  everyOtherYear: 24,
+};
+const DAY_STEPS: Partial<Record<Frequency, number>> = { daily: 1, weekly: 7, everyOtherWeek: 14, every4Weeks: 28 };
+
+/** The dates a scheduled transaction falls on, from its next date up to `to`. */
+export function occurrences(s: Pick<ScheduledTransaction, "date_next" | "frequency">, to: string): string[] {
+  const dates: string[] = [];
+  const [y, m, d] = parts(s.date_next);
+  for (let i = 0; i < 400; i++) {
+    let date: string;
+    if (s.frequency === "never") date = i === 0 ? s.date_next : "9999-12-31";
+    else if (DAY_STEPS[s.frequency]) date = addDays(s.date_next, i * DAY_STEPS[s.frequency]!);
+    else if (MONTH_STEPS[s.frequency]) {
+      const [year, month] = addMonths(y, m, i * MONTH_STEPS[s.frequency]!);
+      date = dayIn(year, month, d);
+    } else {
+      // twiceAMonth: the given day, and 15 days later in the same month (inferred from YNAB's UI).
+      const [year, month] = addMonths(y, m, Math.floor(i / 2));
+      date = dayIn(year, month, i % 2 === 0 ? d : d + 15);
+    }
+    if (date > to) break;
+    dates.push(date);
+  }
+  return dates;
+}
+
+/** Scheduled outflows from `from` to `to`, one entry per date. Income is never counted ahead. */
+export function scheduledOutflows(
+  scheduled: ScheduledTransaction[],
+  from: string,
+  to: string
+): Array<{ date: string; label: string; amount: number }> {
+  return scheduled
+    .filter((s) => !s.deleted && s.amount < 0)
+    .flatMap((s) =>
+      occurrences(s, to)
+        .filter((date) => date >= from)
+        .map((date) => ({ date, label: s.payee_name ?? s.category_name ?? "Scheduled", amount: -s.amount }))
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// --- Suggested scheduled transactions, from history ---
+
+export interface ScheduleSuggestion {
+  /** "accountId|identityKey": stable id for ignore. */
+  id: string;
+  label: string;
+  accountId: string;
+  /** Positive milliunits (the typical amount). */
+  amount: number;
+  dayOfMonth: number;
+  nextDate: string;
+  categoryId: string | null;
+  /** True when the amount changed between months: YNAB matches imports only on the exact amount. */
+  amountVaries: boolean;
+  months: number;
+}
+
+const DETECT_MONTHS = 4;
+const DETECT_MIN_MONTHS = 3;
+const AMOUNT_SPREAD = 1.25;
+const DAY_SPREAD = 5;
+const COVER_DAYS = 5;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function memoFields(memo: string | null): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(memo ?? "");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** True when a scheduled transaction on the account already covers this amount and day. */
+function covered(s: ScheduledTransaction[], accountId: string, amount: number, day: number): boolean {
+  return s.some((x) => {
+    if (x.deleted || x.amount >= 0 || x.account_id !== accountId) return false;
+    const gap = Math.abs(parts(x.date_next)[2] - day);
+    return Math.abs(-x.amount - amount) <= amount * (AMOUNT_SPREAD - 1) && Math.min(gap, 31 - gap) <= COVER_DAYS;
+  });
+}
+
+/**
+ * Payments that repeat monthly and have no scheduled transaction yet: same payee and account in
+ * at least 3 of the last 4 full months, amounts within 25%, days of month within 5 days.
+ * Cash withdrawals, transfers, and installments are left out (installments count from their plan).
+ */
+export function suggestScheduled(snapshot: Snapshot): ScheduleSuggestion[] {
+  const { transactions, today, scheduled, settings } = snapshot;
+  const [y, m] = parts(today);
+  const months = Array.from({ length: DETECT_MONTHS }, (_, i) => {
+    const [year, month] = addMonths(y, m, -(i + 1));
+    return iso(year, month, 1).slice(0, 7);
+  });
+  const groups = new Map<string, YnabTransaction[]>();
+  for (const t of transactions) {
+    if (t.deleted || t.transfer_account_id || t.amount >= 0 || !months.includes(t.date.slice(0, 7))) continue;
+    if (/^נמשך מכרטיס/.test(readMemo(t.memo).bankText) || t.payee_name === "משיכת מזומן") continue;
+    if (typeof memoFields(t.memo).installment === "string") continue;
+    const key = identityKey(t);
+    if (!key) continue;
+    const id = `${t.account_id}|${key}`;
+    const list = groups.get(id);
+    if (list) list.push(t);
+    else groups.set(id, [t]);
+  }
+
+  const ignored = new Set(settings.ignoredSuggestions);
+  const found: ScheduleSuggestion[] = [];
+  for (const [id, list] of groups) {
+    if (ignored.has(id)) continue;
+    // One payment per month: the largest, so a small extra charge does not hide the pattern.
+    const byMonth = new Map<string, YnabTransaction>();
+    for (const t of list) {
+      const month = t.date.slice(0, 7);
+      const current = byMonth.get(month);
+      if (!current || Math.abs(t.amount) > Math.abs(current.amount)) byMonth.set(month, t);
+    }
+    if (byMonth.size < DETECT_MIN_MONTHS) continue;
+    const picks = [...byMonth.values()].sort((a, b) => b.date.localeCompare(a.date));
+    const amounts = picks.map((t) => Math.abs(t.amount));
+    const days = picks.map((t) => parts(t.date)[2]);
+    if (Math.max(...amounts) > Math.min(...amounts) * AMOUNT_SPREAD) continue;
+    if (Math.max(...days) - Math.min(...days) > DAY_SPREAD) continue;
+
+    const amount = median(amounts);
+    const dayOfMonth = median(days);
+    const accountId = picks[0].account_id;
+    if (covered(scheduled, accountId, amount, dayOfMonth)) continue;
+
+    const categoryCounts = new Map<string, number>();
+    for (const t of picks) if (t.category_id) categoryCounts.set(t.category_id, (categoryCounts.get(t.category_id) ?? 0) + 1);
+    const categoryId = [...categoryCounts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    // A standing order's payee is the generic "הוראת קבע"; the recipient is in the bank text.
+    const { counterparty, merchant } = parseBankText(readMemo(picks[0].memo).bankText);
+    const [ty, tm, td] = parts(today);
+    const [ny, nm] = dayOfMonth > td ? [ty, tm] : addMonths(ty, tm, 1);
+
+    found.push({
+      id,
+      label: counterparty || merchant || picks[0].payee_name || identityKey(picks[0]),
+      accountId,
+      amount,
+      dayOfMonth,
+      nextDate: dayIn(ny, nm, dayOfMonth),
+      categoryId,
+      amountVaries: new Set(amounts).size > 1,
+      months: byMonth.size,
+    });
+  }
+  return found.sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+}
+
+// --- Installments ---
+
+export interface InstallmentPlan {
+  accountId: string;
+  payee: string;
+  paid: number;
+  total: number;
+  /** Positive milliunits per payment. */
+  payment: number;
+  /** Charge date of the latest imported payment. */
+  lastCharge: string;
+  remaining: number;
+}
+
+/**
+ * Active installment plans from the memo field `installment: "n/total"` that this repo writes.
+ * A plan is identified by account, payee, original amount, and number of payments; its latest
+ * imported payment gives what is left. Plans whose last charge is more than 2 months old are
+ * treated as ended or no longer imported.
+ */
+export function installmentPlans(transactions: YnabTransaction[], today: string): InstallmentPlan[] {
+  const [y, m] = parts(today);
+  const [sy, sm] = addMonths(y, m, -2);
+  const cutoff = iso(sy, sm, 1);
+  const plans = new Map<string, InstallmentPlan>();
+  for (const t of transactions) {
+    if (t.deleted) continue;
+    const memo = memoFields(t.memo);
+    if (typeof memo.installment !== "string") continue;
+    const [paid, total] = memo.installment.split("/").map(Number);
+    if (!paid || !total) continue;
+    const lastCharge = typeof memo.chargeDate === "string" ? memo.chargeDate : t.date;
+    const key = `${t.account_id}|${t.payee_name}|${memo.originalAmount ?? ""}|${total}`;
+    const current = plans.get(key);
+    if (current && current.paid >= paid) continue;
+    const payment = Math.abs(t.amount);
+    plans.set(key, { accountId: t.account_id, payee: t.payee_name ?? "", paid, total, payment, lastCharge, remaining: (total - paid) * payment });
+  }
+  return [...plans.values()].filter((p) => p.paid < p.total && p.lastCharge >= cutoff);
+}
+
+// --- Accounts ---
+
+const MONEY_TYPES = new Set(["checking", "savings", "cash"]);
+const OWED_TYPES = new Set(["creditCard", "lineOfCredit"]);
+
+function openOnBudget(accounts: Account[]): Account[] {
+  return accounts.filter((a) => a.on_budget && !a.closed && !a.deleted);
+}
+
+// --- Mode A: cash-flow ---
+
+export function leftCashflow(snapshot: Snapshot): LeftToSpend {
+  const accounts = openOnBudget(snapshot.accounts);
+  const end = periodEndDate(snapshot.today, snapshot.settings.periodEnd);
+  const lines: Line[] = [];
+  for (const a of accounts.filter((x) => MONEY_TYPES.has(x.type))) lines.push({ label: a.name, amount: a.balance });
+  for (const a of accounts.filter((x) => OWED_TYPES.has(x.type) && x.balance !== 0)) {
+    lines.push({ label: `${a.name} (card balance)`, amount: a.balance });
+  }
+  // YNAB enters a scheduled transaction on its date, so from today on it has not been entered yet.
+  for (const s of scheduledOutflows(snapshot.scheduled, snapshot.today, end)) {
+    lines.push({ label: `${s.label} (scheduled, ${s.date})`, amount: -s.amount });
+  }
+  if (snapshot.settings.buffer) lines.push({ label: "Buffer", amount: -snapshot.settings.buffer });
+  const warnings = snapshot.scheduled.some((s) => !s.deleted && s.amount < 0)
+    ? []
+    : ["No scheduled transactions in YNAB yet, so no fixed payments are subtracted."];
+  return { total: lines.reduce((s, l) => s + l.amount, 0), lines, warnings };
+}
+
+// --- Mode B: YNAB categories ---
+
+const NON_SPENDING_GROUPS = new Set(["Credit Card Payments", "Internal Master Category", "Hidden Categories"]);
+
+export function spendingCategories(month: Month): MonthCategory[] {
+  return month.categories.filter((c) => !c.hidden && !c.deleted && !NON_SPENDING_GROUPS.has(c.category_group_name));
+}
+
+export function leftYnab(snapshot: Snapshot): LeftToSpend {
+  const chosen = new Set(snapshot.settings.flexibleCategoryIds);
+  const categories = spendingCategories(snapshot.month).filter((c) => chosen.size === 0 || chosen.has(c.id));
+  const byGroup = new Map<string, number>();
+  for (const c of categories) byGroup.set(c.category_group_name, (byGroup.get(c.category_group_name) ?? 0) + c.balance);
+  const lines = [...byGroup].map(([label, amount]) => ({ label, amount })).filter((l) => l.amount !== 0);
+  const warnings: string[] = [];
+  if (snapshot.month.to_be_budgeted > 0) {
+    warnings.push(`${formatShekels(snapshot.month.to_be_budgeted)} is in Ready to Assign and in no category, so this number leaves it out.`);
+  }
+  return { total: lines.reduce((s, l) => s + l.amount, 0), lines, warnings };
+}
+
+// --- Credit exposure ---
+
+export interface ExposureGroup {
+  name: string;
+  limit: number | null;
+  used: number;
+  unused: number | null;
+  lines: Line[];
+}
+
+export function creditExposure(snapshot: Snapshot): ExposureGroup[] {
+  const accounts = openOnBudget(snapshot.accounts);
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const plans = installmentPlans(snapshot.transactions, snapshot.today);
+  const groups: ExposureGroup[] = [];
+
+  const { overdraft } = snapshot.settings;
+  const limitAccount = overdraft && byId.get(overdraft.limitAccountId);
+  const usedAccount = overdraft && byId.get(overdraft.accountId);
+  if (limitAccount && usedAccount) {
+    const used = Math.max(0, -usedAccount.balance);
+    groups.push({
+      name: "Overdraft",
+      limit: limitAccount.balance,
+      used,
+      unused: limitAccount.balance - used,
+      lines: [{ label: usedAccount.name, amount: used }],
+    });
+  }
+
+  const configured = snapshot.settings.creditLimits;
+  const grouped = new Set(configured.flatMap((g) => g.accountIds));
+  const defaults = accounts
+    .filter((a) => OWED_TYPES.has(a.type) && !grouped.has(a.id))
+    .map((a) => ({ name: a.name, limit: null as number | null, accountIds: [a.id] }));
+
+  for (const g of [...configured, ...defaults]) {
+    const lines: Line[] = [];
+    for (const id of g.accountIds) {
+      const a = byId.get(id);
+      if (!a) continue;
+      if (a.balance < 0) lines.push({ label: `${a.name} balance`, amount: -a.balance });
+      const future = plans.filter((p) => p.accountId === id).reduce((s, p) => s + p.remaining, 0);
+      if (future) lines.push({ label: `${a.name} future installments`, amount: future });
+    }
+    const used = lines.reduce((s, l) => s + l.amount, 0);
+    groups.push({ name: g.name, limit: g.limit, used, unused: g.limit === null ? null : g.limit - used, lines });
+  }
+  return groups;
+}
+
+// --- Obligations for coming months ---
+
+export interface MonthObligations {
+  month: string;
+  installments: number;
+  scheduled: number;
+  total: number;
+}
+
+/**
+ * Per month from next month: installment charges not yet in a card balance, plus scheduled outflows.
+ * The next installment of each plan is usually already imported (charged next month), so it is in
+ * the card balance and not counted here.
+ */
+export function obligations(snapshot: Snapshot, months = 12): MonthObligations[] {
+  const [y, m] = parts(snapshot.today);
+  const plans = installmentPlans(snapshot.transactions, snapshot.today);
+  const [ly, lm] = addMonths(y, m, months);
+  const outflows = scheduledOutflows(snapshot.scheduled, iso(...addMonths(y, m, 1), 1), dayIn(ly, lm, 31));
+  return Array.from({ length: months }, (_, i) => {
+    const [year, month] = addMonths(y, m, i + 1);
+    const label = iso(year, month, 1).slice(0, 7);
+    const installments = plans.reduce((s, p) => {
+      const [py, pm] = parts(p.lastCharge);
+      const ahead = (year - py) * 12 + (month - pm);
+      return ahead >= 1 && ahead <= p.total - p.paid ? s + p.payment : s;
+    }, 0);
+    const scheduled = outflows.filter((o) => o.date.startsWith(label)).reduce((s, o) => s + o.amount, 0);
+    return { month: label, installments, scheduled, total: installments + scheduled };
+  });
+}
+
+export function formatShekels(milliunits: number): string {
+  const value = Math.round(milliunits / 1000);
+  return `${value < 0 ? "−" : ""}₪${Math.abs(value).toLocaleString("en-US")}`;
+}

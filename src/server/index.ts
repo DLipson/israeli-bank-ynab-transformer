@@ -4,6 +4,7 @@ import scrapeRouter from "./routes/scrape.js";
 import ynabRouter from "./routes/ynab.js";
 import historyRouter from "./routes/history.js";
 import categorizeRouter from "./routes/categorize.js";
+import spendingRouter from "./routes/spending.js";
 import { loadAppEnv } from "../env.js";
 
 const app = express();
@@ -18,6 +19,7 @@ app.use("/api/accounts", accountsRouter);
 app.use("/api/ynab", ynabRouter);
 app.use("/api/history", historyRouter);
 app.use("/api/categorize", categorizeRouter);
+app.use("/api/spending", spendingRouter);
 app.use("/api", scrapeRouter);
 
 // Health check
