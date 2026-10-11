@@ -32,10 +32,19 @@ export function getBankCredentialEnvVars(): string[] {
   return [...keys];
 }
 
+// Each read starts PowerShell and compiles C# (~1.5 s), and spawnSync blocks the whole server meanwhile.
+// ponytail: re-read at most every 5 minutes; this app's own saves and deletes force the next read.
+const HYDRATE_TTL_MS = 5 * 60 * 1000;
+let lastHydratedAt = 0;
+
 export function hydrateEnvWithStoredBankCredentials(): void {
   if (!isWindowsCredentialManagerAvailable()) {
     return;
   }
+  if (Date.now() - lastHydratedAt < HYDRATE_TTL_MS) {
+    return;
+  }
+  lastHydratedAt = Date.now();
 
   try {
     const envVars = getBankCredentialEnvVars();
@@ -70,6 +79,7 @@ export function saveBankCredentialsToWindowsCredentialManager(updates: Record<st
   }
 
   runCredentialScript("SetMany", { itemsJson: JSON.stringify(items) });
+  lastHydratedAt = 0;
 }
 
 export function deleteBankCredentialsFromWindowsCredentialManager(envVars: string[]): void {
@@ -85,6 +95,7 @@ export function deleteBankCredentialsFromWindowsCredentialManager(envVars: strin
     "DeleteMany",
     { itemsJson: JSON.stringify(envVars.map((envVar) => toTarget(envVar))) }
   );
+  lastHydratedAt = 0;
 }
 
 function toTarget(envVar: string): string {
