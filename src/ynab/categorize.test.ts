@@ -38,6 +38,7 @@ function txn(overrides: Partial<YnabTransaction> = {}): YnabTransaction {
     payee_name: "Shop",
     category_id: null,
     category_name: null,
+    account_id: "acc-main",
     account_name: "Main Account",
     transfer_account_id: null,
     deleted: false,

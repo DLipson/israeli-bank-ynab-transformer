@@ -12,6 +12,7 @@ export interface YnabTransaction {
   payee_name: string | null;
   category_id: string | null;
   category_name: string | null;
+  account_id: string;
   account_name: string;
   transfer_account_id: string | null;
   deleted: boolean;

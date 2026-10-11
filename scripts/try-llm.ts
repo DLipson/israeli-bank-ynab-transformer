@@ -9,7 +9,7 @@ const categories: CategoryOption[] = [
   { id: "fuel", name: "Fuel", group: "Car" },
   { id: "phone", name: "Phone", group: "Bills" },
 ];
-const base = { date: "2026-10-01", amount: -1, category_id: null, category_name: null, account_name: "Card", transfer_account_id: null, deleted: false };
+const base = { date: "2026-10-01", amount: -1, category_id: null, category_name: null, account_id: "acc-card", account_name: "Card", transfer_account_id: null, deleted: false };
 const items = buildItems(
   [
     { ...base, id: "a", payee_name: "סופר פארם בית שמש", memo: null },
