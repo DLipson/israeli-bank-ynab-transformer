@@ -142,6 +142,56 @@ Dough has no credit-card concept. The author is Finnish. (inferred: Finnish hous
 3. Credit cards count as available money (user request, 2026-10-06). New helper `isAvailableAccount()` in `src/lib/transaction-utils.ts` (types: checking, savings, creditCard). Used in `src/app/(app)/dashboard/page.tsx`, `src/app/(app)/transactions/page.tsx`, `src/app/api/summary/route.ts`, `src/lib/ai/chat-respond.ts` (2 places), `src/lib/dashboard-model.ts`. `src/lib/budget-math.ts` `moneyLastsDays` SQL includes `creditCard`. The Accounts page shows credit cards (`SPENDING_TYPES`). Not changed: income-account picker, net worth. Result: "Available" went from 34,158 to 33,059 (Leumi Cards −1,303, Cal +204). Card debits are transfers, so they do not count twice.
 4. These changes will conflict with upstream updates. Use `git diff` in the Dough folder to see them.
 
+## Safe-spending spec (v1, approved 2026-10-12; fixed payments changed to YNAB scheduled transactions)
+
+Agreed with the user:
+- One total "left to spend" for the period. No per-day amount.
+- Period: calendar month end by default; configurable (setting `periodEnd`).
+- The overdraft ("Credit Limit" checking account, +40,000) always counts as money.
+- Credit-card balances count as already spent on the day of purchase.
+- Future installments stay OUT of the monthly number. They appear in credit exposure and in the obligations for coming months.
+- Future income is never counted before it arrives.
+- Buffer: configurable amount.
+- Card limits: entered by hand, as groups; cards that share one limit go in one group.
+- Two modes, both always calculated and shown; a switch picks the main one.
+
+### Mode A: cash-flow
+left = sum(checking + savings balances, including "Credit Limit")
+     + sum(credit card balances)            (negative = owed)
+     - fixed payments due from today to period end
+     - buffer
+Fixed payments: detected from history (monthly, same payee, similar amount and day of month),
+confirmed or removed by the user; the confirmed list is saved. YNAB scheduled transactions
+(none today) can be added to the list later. (Default chosen 2026-10-12; user may change it.)
+
+### Mode B: YNAB categories
+left = sum(Available) of the categories the user marks as flexible (setting `flexibleCategories`)
+Shows a warning line when Ready to Assign is large (today: 32,688; October assigned: 0).
+
+### Shown with both modes
+- Explanation lines that build the total (e.g. "Bank +34,157", "Cards owed -1,099").
+- One line that explains the gap between A and B.
+
+### Credit exposure (separate number)
+Per limit group: limit - (card balances owed in the group + future installments of cards in the group).
+Overdraft group: limit = Credit Limit balance, used = negative part of the other checking accounts (inferred: Main Account is the overdrawn account; confirm).
+
+### Obligations for coming months (separate list)
+Per month: future installments (from memo `installment: "n/total"`) + confirmed fixed payments.
+Today: installments 797 next month, 655, then 255 x 6, then 20 x 5; remaining total 3,080.
+
+### Settings file
+`~/.config/israeli-bank-ynab-transformer/safe-spending.json`:
+{ mode: "cashflow" | "ynab", periodEnd: "month-end" | <day 1-31>, buffer: number,
+  flexibleCategories: string[], creditLimits: [{ name, limit, accounts: string[] }],
+  fixedPayments: [{ payee, amount, dayOfMonth, account, confirmed }] }
+
+### Real data facts (2026-10-11/12, read)
+- Accounts: Main -20,260; Second +14,417; Credit Limit +40,000; Leumi Cards -1,303; Max Card 0; 8400 - Cal +204; Tashlumim 0.
+- Card debits from the bank: Leumi + Cal on the 2nd (since July 2026; before that the 10th); small ones on the 10th and 15th.
+- YNAB scheduled transactions: 0.
+- Card limits from scrapers: only Max reports CreditLimit (read in israeli-bank-scrapers max.ts).
+
 ## Next steps
 
 1. Configure Dough: spending account, income, bills.
@@ -194,3 +244,9 @@ Dough has no credit-card concept. The author is Finnish. (inferred: Finnish hous
   - History index copied arrays on each add (quadratic): buildItems 1.2 s → 0.1 s.
   - React dev mode ran the first load twice (2 YNAB syncs); guarded with a ref.
   - Result: Categorize first open/Reload ~1.6 s (server) / 0.5 s warm; days change 0.3 s.
+- 2026-10-12: Drafted the safe-spending spec with the user (see "Safe-spending spec (draft v1)"). Waiting for approval before engine code.
+- 2026-10-12: User approved the spec and confirmed Main Account is the overdrawn account. Built the engine on branch `safe-spending` (from `categorize-tab`).
+- 2026-10-12: Change requested by the user: YNAB scheduled transactions are the fixed payments (the user started using them; rent ₪5,500 already scheduled). The engine suggests new scheduled transactions from history (monthly, same payee+account in 3 of last 4 months, amount within 25%, day within 5 days; no cash, transfers, or installments; not already covered by a schedule on the same account with amount within 25% and day within 5 days). The local "confirmed fixed payments" list was dropped; only ignored suggestions are stored locally.
+- 2026-10-12: YNAB OpenAPI spec (read): an imported transaction with import_id is matched to an existing user-entered transaction "on the same account, with the same amount, and with a date +/-10 days". So scheduled amounts must be exact; suggestions flag amounts that varied. Scheduled create: POST /budgets/{id}/scheduled_transactions, frequency enum never..everyOtherYear, date in the future, at most 5 years ahead. YNAB now documents /plans/{plan_id} paths; /budgets still works.
+- 2026-10-12: Engine files: `src/engine/safe-spending.ts` (+ `.test.ts`, 11 tests), `src/engine/safe-spending-service.ts`, `src/server/routes/spending.ts` (`GET /api/spending`, `PUT /settings`, `POST /scheduled`, `POST /ignore`), GUI `gui/src/pages/SpendingPage.tsx` (Spending tab), `scripts/try-spending.ts`. Settings: `~/.config/israeli-bank-ynab-transformer/safe-spending.json`.
+- 2026-10-12: Real data today: cash-flow ₪33,059, YNAB categories ₪3,519 (Ready to Assign ₪32,688), overdraft unused ₪19,740 of ₪40,000, 13 suggested schedules. Card limits not set yet. Not committed yet.
