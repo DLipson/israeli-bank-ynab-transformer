@@ -4,6 +4,7 @@ import { ScrapePage } from "@/pages/ScrapePage";
 import { YnabPage } from "@/pages/YnabPage";
 import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
+import { SpendingPage } from "@/pages/SpendingPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="ynab">YNAB</TabsTrigger>
           <TabsTrigger value="categorize">Categorize</TabsTrigger>
+          <TabsTrigger value="spending">Spending</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts">
@@ -37,6 +39,10 @@ export default function App() {
 
         <TabsContent value="categorize">
           <CategorizePage />
+        </TabsContent>
+
+        <TabsContent value="spending">
+          <SpendingPage />
         </TabsContent>
       </Tabs>
     </div>

@@ -282,3 +282,82 @@ export async function rejectCategory(id: string, categoryId: string): Promise<vo
 export async function saveSearchKey(key: string): Promise<void> {
   await request("/categorize/search-key", { method: "PUT", body: JSON.stringify({ key }) });
 }
+
+// --- Spending (safe-spending engine). Amounts are YNAB milliunits. ---
+
+export interface SpendingLine {
+  label: string;
+  amount: number;
+}
+
+export interface LeftToSpend {
+  total: number;
+  lines: SpendingLine[];
+  warnings: string[];
+}
+
+export interface CreditLimitGroup {
+  name: string;
+  limit: number;
+  accountIds: string[];
+}
+
+export interface SpendingSettings {
+  mode: "cashflow" | "ynab";
+  periodEnd: "month-end" | number;
+  buffer: number;
+  flexibleCategoryIds: string[];
+  creditLimits: CreditLimitGroup[];
+  overdraft: { limitAccountId: string; accountId: string } | null;
+  ignoredSuggestions: string[];
+}
+
+export interface ScheduleSuggestion {
+  id: string;
+  label: string;
+  accountId: string;
+  amount: number;
+  dayOfMonth: number;
+  nextDate: string;
+  categoryId: string | null;
+  amountVaries: boolean;
+  months: number;
+}
+
+export interface SpendingData {
+  today: string;
+  periodEnd: string;
+  settings: SpendingSettings;
+  cashflow: LeftToSpend;
+  ynab: LeftToSpend;
+  gap: number;
+  readyToAssign: number;
+  exposure: Array<{ name: string; limit: number | null; used: number; unused: number | null; lines: SpendingLine[] }>;
+  obligations: Array<{ month: string; installments: number; scheduled: number; total: number }>;
+  suggestions: ScheduleSuggestion[];
+  scheduledCount: number;
+  accounts: Array<{ id: string; name: string; type: string; balance: number }>;
+  categories: CategoryOption[];
+}
+
+export async function getSpending(): Promise<SpendingData> {
+  return request("/spending");
+}
+
+export async function saveSpendingSettings(settings: Partial<SpendingSettings>): Promise<SpendingSettings> {
+  return request("/spending/settings", { method: "PUT", body: JSON.stringify(settings) });
+}
+
+export async function createScheduled(s: {
+  accountId: string;
+  date: string;
+  amount: number;
+  payeeName: string;
+  categoryId: string | null;
+}): Promise<void> {
+  await request("/spending/scheduled", { method: "POST", body: JSON.stringify(s) });
+}
+
+export async function ignoreScheduleSuggestion(id: string): Promise<void> {
+  await request("/spending/ignore", { method: "POST", body: JSON.stringify({ id }) });
+}
