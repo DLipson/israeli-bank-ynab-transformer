@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dough",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\Dovid L\\Dev\\dough\\run-dough.ps1"],
+      "port": 3031
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "$env:NODE_EXTRA_CA_CERTS = [Environment]::GetEnvironmentVariable('NODE_EXTRA_CA_CERTS', 'Machine'); npm run dev:server"
+      ],
+      "port": 3001
+    },
+    {
+      "name": "gui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "gui", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
