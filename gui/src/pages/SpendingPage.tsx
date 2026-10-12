@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CalendarPlus, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   createScheduled,
@@ -22,21 +21,7 @@ import {
   type SpendingData,
   type SpendingSettings,
 } from "@/api/client";
-
-const K = 1000;
-
-function shekels(milliunits: number): string {
-  const value = Math.round(milliunits / K);
-  return `${value < 0 ? "−" : ""}₪${Math.abs(value).toLocaleString("en-US")}`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-IL", { day: "numeric", month: "short" });
-}
-
-function monthLabel(yyyyMm: string): string {
-  return new Date(`${yyyyMm}-01T00:00:00`).toLocaleDateString("en-IL", { month: "short", year: "numeric" });
-}
+import { formatDate, K, monthLabel, shekels, SpendingContext, useSpending } from "@/lib/spending";
 
 function Lines({ result }: { result: LeftToSpend }) {
   return (
@@ -62,57 +47,46 @@ function Lines({ result }: { result: LeftToSpend }) {
   );
 }
 
-function Headline({ data, onMode }: { data: SpendingData; onMode: (mode: SpendingSettings["mode"]) => void }) {
+const MODE_NAMES = { cashflow: "Cash-flow", ynab: "YNAB categories" } as const;
+
+/** The main number, its mode switch, and how it is built: for Home's "Details". */
+export function NumberDetails({ data, onMode }: { data: SpendingData; onMode: (mode: SpendingSettings["mode"]) => void }) {
   const mode = data.settings.mode;
   const main = mode === "cashflow" ? data.cashflow : data.ynab;
   const other = mode === "cashflow" ? data.ynab : data.cashflow;
-  const names = { cashflow: "Cash-flow", ynab: "YNAB categories" } as const;
   const otherMode = mode === "cashflow" ? "ynab" : "cashflow";
 
   return (
-    <Card>
-      <CardContent className="space-y-4 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Left to spend until {formatDate(data.periodEnd)}</p>
-            <p className={cn("text-4xl font-bold tracking-tight", main.total < 0 && "text-red-700")}>{shekels(main.total)}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {names[otherMode]}: <span className="font-medium text-foreground">{shekels(other.total)}</span>
-            </p>
-          </div>
-          <div className="inline-flex rounded-md border p-0.5" role="radiogroup" aria-label="Main number">
-            {(["cashflow", "ynab"] as const).map((m) => (
-              <button
-                key={m}
-                role="radio"
-                aria-checked={mode === m}
-                onClick={() => mode !== m && onMode(m)}
-                className={cn(
-                  "rounded px-3 py-1 text-sm transition-colors",
-                  mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                )}
-              >
-                {names[m]}
-              </button>
-            ))}
-          </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {MODE_NAMES[otherMode]}: <span className="font-medium text-foreground">{shekels(other.total)}</span>
+        </p>
+        <div className="inline-flex rounded-md border p-0.5" role="radiogroup" aria-label="Main number">
+          {(["cashflow", "ynab"] as const).map((m) => (
+            <button
+              key={m}
+              role="radio"
+              aria-checked={mode === m}
+              onClick={() => mode !== m && onMode(m)}
+              className={cn(
+                "rounded px-3 py-1 text-sm transition-colors",
+                mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {MODE_NAMES[m]}
+            </button>
+          ))}
         </div>
-
-        {data.readyToAssign > 0 && Math.abs(data.gap) > K && (
-          <p className="rounded bg-muted px-3 py-2 text-xs text-muted-foreground">
-            The two numbers differ by {shekels(Math.abs(data.gap))}. {shekels(data.readyToAssign)} is in YNAB's Ready to
-            Assign: the cash-flow number counts it, the YNAB number does not until you assign it.
-          </p>
-        )}
-
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">How the {names[mode].toLowerCase()} number is built</summary>
-          <div className="mt-2">
-            <Lines result={main} />
-          </div>
-        </details>
-      </CardContent>
-    </Card>
+      </div>
+      {data.readyToAssign > 0 && Math.abs(data.gap) > K && (
+        <p className="text-xs text-muted-foreground">
+          The two numbers differ by {shekels(Math.abs(data.gap))}, mostly because {shekels(data.readyToAssign)} is still in
+          YNAB's Ready to Assign.
+        </p>
+      )}
+      <Lines result={main} />
+    </div>
   );
 }
 
@@ -250,7 +224,7 @@ const PACE_LABEL: Record<Pace["status"], string> = {
   "fixed-due": "not paid yet",
 };
 
-function PaceBadge({ p }: { p: Pace }) {
+export function PaceBadge({ p }: { p: Pace }) {
   const style =
     p.status === "over"
       ? "bg-red-100 text-red-800"
@@ -280,7 +254,7 @@ function PaceRow({ p }: { p: Pace }) {
 }
 
 /** Pace this month vs. a normal month up to the same day (the date of the newest import). */
-function PaceCard({ data }: { data: SpendingData }) {
+export function PaceCard({ data }: { data: SpendingData }) {
   const b = data.baseline;
   const age = Math.round((Date.parse(data.today) - Date.parse(b.asOf)) / 86400000);
   return (
@@ -393,7 +367,7 @@ function ReportCard({ type, report, onMade }: { type: ReportType; report: Report
   );
 }
 
-function ReportsPanel() {
+export function ReportsPanel() {
   const [reports, setReports] = useState<Record<ReportType, Report | null> | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -415,7 +389,7 @@ function ReportsPanel() {
   );
 }
 
-function Exposure({ data }: { data: SpendingData }) {
+export function Exposure({ data }: { data: SpendingData }) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -432,7 +406,7 @@ function Exposure({ data }: { data: SpendingData }) {
             </tr>
           </thead>
           <tbody>
-            {data.exposure.map((g) => (
+            {data.exposure.filter((g) => g.used > 0 || g.limit !== null).map((g) => (
               <tr key={g.name} className="border-b last:border-0" title={g.lines.map((l) => `${l.label}: ${shekels(l.amount)}`).join("\n")}>
                 <td className="py-1.5" dir="auto">
                   {g.name}
@@ -452,7 +426,7 @@ function Exposure({ data }: { data: SpendingData }) {
   );
 }
 
-function Obligations({ data }: { data: SpendingData }) {
+export function Obligations({ data }: { data: SpendingData }) {
   const max = Math.max(...data.obligations.map((o) => o.total), 1);
   return (
     <Card>
@@ -461,15 +435,16 @@ function Obligations({ data }: { data: SpendingData }) {
       </CardHeader>
       <CardContent className="space-y-1">
         {data.obligations.map((o) => (
-          <div key={o.month} className="flex items-center gap-3 text-sm">
+          <div
+            key={o.month}
+            className="flex items-center gap-3 text-sm"
+            title={`${shekels(o.scheduled)} scheduled + ${shekels(o.installments)} installments`}
+          >
             <span className="w-20 shrink-0 text-muted-foreground">{monthLabel(o.month)}</span>
             <div className="h-2 flex-1 rounded bg-muted">
               <div className="h-2 rounded bg-primary/70" style={{ width: `${(o.total / max) * 100}%` }} />
             </div>
             <span className="w-20 text-right font-mono">{shekels(o.total)}</span>
-            <span className="hidden w-56 text-xs text-muted-foreground sm:block">
-              {shekels(o.scheduled)} scheduled + {shekels(o.installments)} installments
-            </span>
           </div>
         ))}
         <p className="pt-2 text-xs text-muted-foreground">
@@ -672,14 +647,16 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
   );
 }
 
-export function SpendingPage() {
+// --- Shared data for Home, Review, Reports, and Setup ---
+
+/** Loads the spending numbers once for every tab that shows them; reload() refreshes them. */
+export function SpendingProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<SpendingData | null>(null);
-  const [view, setView] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  const load = useCallback(async () => {
+  const reload = useCallback(async () => {
     const request = ++latest.current;
     setLoading(true);
     setError("");
@@ -698,105 +675,67 @@ export function SpendingPage() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    load();
-  }, [load]);
+    reload();
+  }, [reload]);
 
-  const setMode = async (mode: SpendingSettings["mode"]) => {
+  const setMode = useCallback(async (mode: SpendingSettings["mode"]) => {
     setData((d) => (d ? { ...d, settings: { ...d.settings, mode } } : d));
     try {
       await saveSpendingSettings({ mode });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the mode");
     }
-  };
+  }, []);
 
-  const removeSuggestion = (id: string) => {
-    setData((d) => (d ? { ...d, suggestions: d.suggestions.filter((s) => s.id !== id) } : d));
-    load();
-  };
-
-  if (!data) {
-    return (
-      <div className="flex items-center gap-2 p-4 text-muted-foreground">
-        {error ? <span className="text-destructive">{error}</span> : <><Loader2 className="h-4 w-4 animate-spin" /> Loading your numbers from YNAB…</>}
-      </div>
-    );
-  }
-
-  const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "";
+  const removeSuggestion = useCallback(
+    (id: string) => {
+      setData((d) => (d ? { ...d, suggestions: d.suggestions.filter((s) => s.id !== id) } : d));
+      reload();
+    },
+    [reload]
+  );
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          {data.scheduledCount} scheduled transactions in YNAB · today {formatDate(data.today)}
-        </p>
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Reload
-        </Button>
-      </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+    <SpendingContext.Provider value={{ data, loading, error, reload, setMode, removeSuggestion }}>{children}</SpendingContext.Provider>
+  );
+}
 
-      <Tabs value={view} onValueChange={setView}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="schedules" className="gap-1.5">
-            Schedules
-            {data.suggestions.length > 0 && (
-              <span className="rounded-full bg-primary px-1.5 text-[11px] leading-4 text-primary-foreground">{data.suggestions.length}</span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <Headline data={data} onMode={setMode} />
-          <PaceCard data={data} />
-          {data.suggestions.length > 0 && (
-            <button
-              className="flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-              onClick={() => setView("schedules")}
-            >
-              <CalendarPlus className="h-4 w-4" />
-              {data.suggestions.length} repeating payments have no schedule yet, so the cash-flow number does not subtract them.
-              <span className="ml-auto font-medium text-foreground">Review →</span>
-            </button>
-          )}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Exposure data={data} />
-            <Obligations data={data} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="schedules">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Suggested scheduled transactions</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Payments that repeated in your history and have no schedule in YNAB. Create makes a monthly scheduled
-                transaction with the values on the line; click a name to edit them first.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {data.suggestions.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">No suggestions. Every repeating payment has a schedule.</p>
-              )}
-              {data.suggestions.map((s) => (
-                <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="reports">
-          <ReportsPanel />
-        </TabsContent>
-
-        <TabsContent value="settings">
-          <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={load} />
-        </TabsContent>
-      </Tabs>
+/** Shown while the spending numbers load, or when loading failed. */
+export function SpendingLoading() {
+  const { error } = useSpending();
+  return (
+    <div className="flex items-center gap-2 p-4 text-muted-foreground">
+      {error ? <span className="text-destructive">{error}</span> : <><Loader2 className="h-4 w-4 animate-spin" /> Loading your numbers from YNAB…</>}
     </div>
   );
+}
+
+export function SchedulesPanel() {
+  const { data, removeSuggestion } = useSpending();
+  if (!data) return <SpendingLoading />;
+  const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "";
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Repeating payments without a schedule</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Create makes a monthly scheduled transaction in YNAB with the values on the line. Click a name to edit it first.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {data.suggestions.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">Every repeating payment has a schedule.</p>
+        )}
+        {data.suggestions.map((s) => (
+          <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SpendingSettingsPanel() {
+  const { data, reload } = useSpending();
+  if (!data) return <SpendingLoading />;
+  return <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={reload} />;
 }
