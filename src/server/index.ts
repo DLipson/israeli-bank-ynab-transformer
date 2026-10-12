@@ -8,7 +8,8 @@ import spendingRouter from "./routes/spending.js";
 import { loadAppEnv } from "../env.js";
 
 const app = express();
-const PORT = 3001;
+// PORT lets a second checkout (e.g. a git worktree) run next to the main one.
+const PORT = Number(process.env.PORT) || 3001;
 
 loadAppEnv();
 

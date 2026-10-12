@@ -12,7 +12,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://localhost:3001",
+      // API_PORT matches the server's PORT when a second checkout runs on other ports.
+      "/api": `http://localhost:${process.env.API_PORT ?? 3001}`,
     },
   },
 });
