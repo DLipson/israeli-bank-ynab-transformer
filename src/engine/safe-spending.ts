@@ -5,6 +5,7 @@
  * The I/O (YNAB, cache, settings file) is in safe-spending-service.ts.
  */
 import { identityKey, parseBankText, readMemo, type YnabTransaction } from "../ynab/categorize.js";
+import { expectedRest, predictItems, spendItems } from "./baseline.js";
 
 export interface Account {
   id: string;
@@ -75,6 +76,10 @@ export interface Settings {
   overdraft: { limitAccountId: string; accountId: string } | null;
   /** Suggested scheduled transactions the user ignored, as "accountId|identityKey". */
   ignoredSuggestions: string[];
+  /** Full past months the baseline uses. */
+  baselineMonths: number;
+  /** Cash-flow subtracts normal spending from tomorrow to the period end. */
+  subtractExpected: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -85,6 +90,8 @@ export const DEFAULT_SETTINGS: Settings = {
   creditLimits: [],
   overdraft: null,
   ignoredSuggestions: [],
+  baselineMonths: 6,
+  subtractExpected: true,
 };
 
 export interface Snapshot {
@@ -377,6 +384,11 @@ export function leftCashflow(snapshot: Snapshot): LeftToSpend {
   // YNAB enters a scheduled transaction on its date, so from today on it has not been entered yet.
   for (const s of scheduledOutflows(snapshot.scheduled, snapshot.today, end)) {
     lines.push({ label: `${s.label} (scheduled, ${s.date})`, amount: -s.amount });
+  }
+  if (snapshot.settings.subtractExpected) {
+    const items = predictItems(spendItems(snapshot.transactions), snapshot.scheduled);
+    const expected = expectedRest(items, snapshot.today, end, snapshot.settings.baselineMonths);
+    if (expected) lines.push({ label: `Expected normal spending until ${end} (median of ${snapshot.settings.baselineMonths} months)`, amount: -expected });
   }
   if (snapshot.settings.buffer) lines.push({ label: "Buffer", amount: -snapshot.settings.buffer });
   const warnings = snapshot.scheduled.some((s) => !s.deleted && s.amount < 0)

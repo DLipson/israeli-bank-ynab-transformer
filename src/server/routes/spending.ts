@@ -62,6 +62,16 @@ function checkSettings(body: unknown, current: Settings): Settings {
     const ids = next.creditLimits.flatMap((g) => g.accountIds);
     if (new Set(ids).size !== ids.length) throw new Error("A card can be in only one credit limit group.");
   }
+  if (b.baselineMonths !== undefined) {
+    if (!Number.isInteger(b.baselineMonths) || b.baselineMonths < 1 || b.baselineMonths > 24) {
+      throw new Error("baselineMonths must be a whole number from 1 to 24.");
+    }
+    next.baselineMonths = b.baselineMonths;
+  }
+  if (b.subtractExpected !== undefined) {
+    if (typeof b.subtractExpected !== "boolean") throw new Error("subtractExpected must be true or false.");
+    next.subtractExpected = b.subtractExpected;
+  }
   if (b.overdraft !== undefined) {
     const o = b.overdraft;
     if (o !== null && (typeof o?.limitAccountId !== "string" || typeof o?.accountId !== "string")) {

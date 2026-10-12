@@ -15,6 +15,8 @@ export interface YnabTransaction {
   account_id: string;
   account_name: string;
   transfer_account_id: string | null;
+  /** Set by YNAB for imported transactions (bank or this repo); null when entered by hand. */
+  import_id?: string | null;
   deleted: boolean;
   subtransactions?: unknown[];
 }

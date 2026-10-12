@@ -18,6 +18,7 @@ import {
   type Settings,
   type Snapshot,
 } from "./safe-spending.js";
+import { baseline, spendItems } from "./baseline.js";
 
 function settingsPath(): string {
   return join(getAppConfigDir(), "safe-spending.json");
@@ -51,6 +52,13 @@ function budgetPath(): string {
   return `/budgets/${encodeURIComponent(id)}`;
 }
 
+/** The newest imported transaction up to today: how fresh the bank data is. */
+export function dataAsOf(transactions: { date: string; import_id?: string | null; deleted: boolean }[], today: string): string {
+  let newest = "";
+  for (const t of transactions) if (!t.deleted && t.import_id && t.date <= today && t.date > newest) newest = t.date;
+  return newest || today;
+}
+
 export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10)) {
   const budget = budgetPath();
   const [{ accounts }, { month }, { scheduled_transactions: scheduled }, transactions] = await Promise.all([
@@ -67,6 +75,8 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const cashflow = leftCashflow(snapshot);
   const ynab = leftYnab(snapshot);
   const end = periodEndDate(today, settings.periodEnd);
+  const items = spendItems(transactions);
+  const spendBaseline = baseline(items, dataAsOf(transactions, today), settings.baselineMonths);
 
   return {
     today,
@@ -79,6 +89,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
     exposure: creditExposure(snapshot),
     obligations: obligations(snapshot),
     suggestions: suggestScheduled(snapshot),
+    baseline: spendBaseline,
     scheduledCount: scheduled.filter((s) => !s.deleted).length,
     accounts: accounts
       .filter((a) => a.on_budget && !a.closed && !a.deleted)

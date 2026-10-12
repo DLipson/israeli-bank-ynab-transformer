@@ -30,3 +30,8 @@ for (const p of s.suggestions) {
   const category = s.categories.find((c) => c.id === p.categoryId)?.name ?? "no category";
   console.log(`   ${p.nextDate}  ${f(p.amount).padStart(8)}${p.amountVaries ? " (varies)" : "         "}  ${p.label}  (${account}; ${category})`);
 }
+const b = s.baseline;
+const pct = (d: number | null) => (d === null ? "" : `${d > 0 ? "+" : ""}${Math.round(d * 100)}%`);
+console.log(`\n== Baseline (${b.months} months). Total: normal month ${f(b.total.normalMonth)}, normal by today ${f(b.total.normalByToday)}, this month ${f(b.total.thisMonth)} ${pct(b.total.difference)} ${b.total.status}`);
+for (const c of b.categories.slice(0, 15)) console.log(`   ${c.name.slice(0, 28).padEnd(28)} normal ${f(c.normalMonth).padStart(8)}  by today ${f(c.normalByToday).padStart(8)}  now ${f(c.thisMonth).padStart(8)}  ${c.status} ${pct(c.difference)}`);
+console.log("   top over pace:", b.topOver.map((c) => `${c.name} ${pct(c.difference)}`).join(", ") || "none");
