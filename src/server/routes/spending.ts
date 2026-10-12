@@ -3,6 +3,7 @@ import { loadAppEnv } from "../../env.js";
 import { getYnabToken } from "../../ynab/import-service.js";
 import {
   createScheduled,
+  dismissAnomaly,
   getSpending,
   ignoreSuggestion,
   loadSettings,
@@ -130,6 +131,15 @@ router.post(
     const { id } = req.body as { id?: unknown };
     if (typeof id !== "string" || !id) throw new Error("id is required.");
     return ignoreSuggestion(id);
+  })
+);
+
+router.post(
+  "/anomalies/dismiss",
+  handle((req) => {
+    const { id } = req.body as { id?: unknown };
+    if (typeof id !== "string" || !id) throw new Error("id is required.");
+    return dismissAnomaly(id);
   })
 );
 

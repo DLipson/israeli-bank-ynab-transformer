@@ -80,6 +80,8 @@ export interface Settings {
   baselineMonths: number;
   /** Cash-flow subtracts normal spending from tomorrow to the period end. */
   subtractExpected: boolean;
+  /** Anomaly findings the user dismissed, by id. */
+  dismissedAnomalies: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -92,6 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoredSuggestions: [],
   baselineMonths: 6,
   subtractExpected: true,
+  dismissedAnomalies: [],
 };
 
 export interface Snapshot {

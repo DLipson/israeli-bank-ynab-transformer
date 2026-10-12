@@ -35,3 +35,5 @@ const pct = (d: number | null) => (d === null ? "" : `${d > 0 ? "+" : ""}${Math.
 console.log(`\n== Baseline (${b.months} months). Total: normal month ${f(b.total.normalMonth)}, normal by today ${f(b.total.normalByToday)}, this month ${f(b.total.thisMonth)} ${pct(b.total.difference)} ${b.total.status}`);
 for (const c of b.categories.slice(0, 15)) console.log(`   ${c.name.slice(0, 28).padEnd(28)} normal ${f(c.normalMonth).padStart(8)}  by today ${f(c.normalByToday).padStart(8)}  now ${f(c.thisMonth).padStart(8)}  ${c.status} ${pct(c.difference)}`);
 console.log("   top over pace:", b.topOver.map((c) => `${c.name} ${pct(c.difference)}`).join(", ") || "none");
+console.log(`\n== Unusual (${s.anomalies.length})`);
+for (const a of s.anomalies) console.log(`   ${a.date} [${a.kind}] ${a.title} — ${a.detail}`);

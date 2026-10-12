@@ -67,6 +67,7 @@ export async function generateReport(token: string, type: ReportType, month?: st
     obligations: s.obligations,
     upcoming: s.upcoming,
     suggestionsCount: s.suggestions.length,
+    anomalies: s.anomalies,
     uncategorizedCount: s.uncategorizedCount,
     previousMonth: s.previousMonth,
   };

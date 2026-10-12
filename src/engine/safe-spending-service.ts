@@ -20,6 +20,7 @@ import {
   type Snapshot,
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
+import { detectAnomalies } from "./anomalies.js";
 import { isUncategorized } from "../ynab/categorize.js";
 
 function settingsPath(): string {
@@ -94,6 +95,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
     obligations: obligations(snapshot),
     suggestions: suggestScheduled(snapshot),
     baseline: spendBaseline,
+    anomalies: detectAnomalies(transactions, spendBaseline.categories, spendBaseline.asOf, settings.dismissedAnomalies),
     upcoming: scheduledOutflows(scheduled, today, new Date(Date.parse(`${today}T00:00:00Z`) + 62 * 86400000).toISOString().slice(0, 10)),
     previousMonth: {
       month: previous,
@@ -146,6 +148,13 @@ export async function createScheduled(token: string, s: NewScheduled): Promise<v
       },
     }),
   });
+}
+
+export function dismissAnomaly(id: string): Settings {
+  const settings = loadSettings();
+  settings.dismissedAnomalies = [...new Set([...settings.dismissedAnomalies, id])];
+  saveSettings(settings);
+  return settings;
 }
 
 export function ignoreSuggestion(id: string): Settings {

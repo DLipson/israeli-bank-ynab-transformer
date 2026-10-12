@@ -4,6 +4,7 @@
  * Spec: docs/financial-intelligence-notes.md, "Plan: reports + spending baseline".
  */
 import type { Baseline, Pace } from "./baseline.js";
+import type { Anomaly } from "./anomalies.js";
 import { formatShekels as f, type ExposureGroup, type LeftToSpend, type MonthObligations } from "./safe-spending.js";
 
 export type ReportType = "weekly" | "month-start" | "month-end";
@@ -43,6 +44,7 @@ export interface ReportInput {
   /** Scheduled outflows from today, with their dates. */
   upcoming: Array<{ date: string; label: string; amount: number }>;
   suggestionsCount: number;
+  anomalies: Anomaly[];
   uncategorizedCount: number;
   previousMonth: { month: string; spent: number; normal: number };
 }
@@ -131,6 +133,11 @@ export function weeklyReport(input: ReportInput, generatedAt: string): Report {
         title: `Pace this month (up to ${dayName(b.asOf)})`,
         rows: paceRows,
         note: b.topOver.length ? undefined : "No category is over pace.",
+      },
+      {
+        title: "Unusual this week",
+        rows: input.anomalies.filter((a) => a.date >= addDays(input.today, -7)).slice(0, 5).map((a) => ({ label: a.title, value: a.detail, tone: "warn" as Tone })),
+        note: input.anomalies.some((a) => a.date >= addDays(input.today, -7)) ? undefined : "Nothing unusual.",
       },
       {
         title: "Scheduled payments in the next 7 days",

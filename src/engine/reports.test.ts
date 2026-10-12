@@ -33,6 +33,7 @@ function input(o: Partial<ReportInput> = {}): ReportInput {
       { date: "2026-10-30", label: "Partner", amount: 95 * K },
     ],
     suggestionsCount: 12,
+    anomalies: [{ id: "x", kind: "duplicate", date: "2026-10-15", title: "Possible duplicate: Shop", detail: "₪90 twice", amount: 90000, transactionIds: [] }],
     uncategorizedCount: 4,
     previousMonth: { month: "2026-09", spent: 31000 * K, normal: 26951 * K },
     ...o,
@@ -55,6 +56,7 @@ describe("weeklyReport", () => {
     expect(t).toContain("Cal: ₪800 used, limit not set");
     expect(t).toContain("Repeating payments without a schedule: 12");
     expect(t).not.toContain("last import"); // 1 day old is fresh
+    expect(t).toContain("Possible duplicate: Shop: ₪90 twice");
   });
 
   it("warns when the bank data is 3 or more days old", () => {
