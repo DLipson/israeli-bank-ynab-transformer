@@ -7,12 +7,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   createScheduled,
+  generateReport,
+  getReports,
   getSpending,
   ignoreScheduleSuggestion,
   saveSpendingSettings,
   type CategoryOption,
   type CreditLimitGroup,
   type LeftToSpend,
+  type Pace,
+  type Report,
+  type ReportType,
   type ScheduleSuggestion,
   type SpendingData,
   type SpendingSettings,
@@ -237,6 +242,179 @@ function SuggestionRow({
   );
 }
 
+const PACE_LABEL: Record<Pace["status"], string> = {
+  under: "under pace",
+  on: "on pace",
+  over: "over pace",
+  "fixed-paid": "paid",
+  "fixed-due": "not paid yet",
+};
+
+function PaceBadge({ p }: { p: Pace }) {
+  const style =
+    p.status === "over"
+      ? "bg-red-100 text-red-800"
+      : p.status === "under"
+        ? "bg-green-100 text-green-800"
+        : "bg-muted text-muted-foreground";
+  const pct = p.difference === null ? "" : ` ${p.difference > 0 ? "+" : ""}${Math.round(p.difference * 100)}%`;
+  return <span className={cn("whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium", style)}>{PACE_LABEL[p.status]}{pct}</span>;
+}
+
+function PaceRow({ p }: { p: Pace }) {
+  return (
+    <div className="flex items-center gap-3 py-1 text-sm">
+      <span className="min-w-0 flex-1 truncate" dir="auto">
+        {p.name}
+      </span>
+      {p.status.startsWith("fixed") ? (
+        <span className="text-xs text-muted-foreground">normally {shekels(p.normalMonth)}</span>
+      ) : (
+        <span className="font-mono text-xs">
+          {shekels(p.thisMonth)} <span className="text-muted-foreground">/ {shekels(p.normalByToday)}</span>
+        </span>
+      )}
+      <PaceBadge p={p} />
+    </div>
+  );
+}
+
+/** Pace this month vs. a normal month up to the same day (the date of the newest import). */
+function PaceCard({ data }: { data: SpendingData }) {
+  const b = data.baseline;
+  const age = Math.round((Date.parse(data.today) - Date.parse(b.asOf)) / 86400000);
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+          Pace this month <PaceBadge p={b.total} />
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Spent {shekels(b.total.thisMonth)} up to {formatDate(b.asOf)}; a normal month by then is {shekels(b.total.normalByToday)} (middle
+          value of the last {b.months} months). A whole normal month is {shekels(b.total.normalMonth)}.
+          {age >= 3 && <span className="text-amber-700"> The newest bank data is {age} days old: run a scrape for a fair pace.</span>}
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {b.topOver.length > 0 ? (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground">Most over pace</p>
+            {b.topOver.map((p) => (
+              <PaceRow key={p.name} p={p} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No category is over pace.</p>
+        )}
+        {b.uncategorized > 0 && (
+          <p className="text-xs text-amber-700">{shekels(b.uncategorized)} this month is not categorized yet, so no category pace includes it.</p>
+        )}
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">All categories ({b.categories.length})</summary>
+          <div className="mt-1 divide-y">
+            {b.categories.map((p) => (
+              <PaceRow key={p.name} p={p} />
+            ))}
+          </div>
+        </details>
+      </CardContent>
+    </Card>
+  );
+}
+
+const REPORT_INFO: Record<ReportType, { name: string; when: string }> = {
+  weekly: { name: "Weekly", when: "Every Sunday at 10:00" },
+  "month-start": { name: "Start of month", when: "On the 1st" },
+  "month-end": { name: "End of month", when: "On the last day" },
+};
+
+const TONE: Record<string, string> = {
+  good: "text-green-700",
+  bad: "text-red-700",
+  warn: "text-amber-700",
+  muted: "text-muted-foreground",
+};
+
+function ReportCard({ type, report, onMade }: { type: ReportType; report: Report | null; onMade: (r: Report) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const make = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      onMade(await generateReport(type));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">{report?.title ?? REPORT_INFO[type].name}</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {REPORT_INFO[type].when}
+              {report && ` · made ${new Date(report.generatedAt).toLocaleString("en-IL", { dateStyle: "medium", timeStyle: "short" })} · bank data up to ${formatDate(report.dataAsOf)}`}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={make} disabled={busy}>
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Make now
+          </Button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!report && <p className="text-sm text-muted-foreground">Not made yet.</p>}
+        {report?.sections.map((section) => (
+          <section key={section.title}>
+            <p className="text-sm font-semibold">{section.title}</p>
+            <table className="w-full text-sm">
+              <tbody>
+                {section.rows.map((row, i) => (
+                  <tr key={`${row.label}-${i}`} className="border-b last:border-0">
+                    <td className={cn("py-1 pr-3", row.tone && TONE[row.tone])} dir="auto">
+                      {row.label}
+                    </td>
+                    <td className={cn("py-1 text-right", row.tone && TONE[row.tone])} dir="auto">
+                      {row.value}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {section.note && <p className="mt-1 text-xs text-muted-foreground">{section.note}</p>}
+          </section>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportsPanel() {
+  const [reports, setReports] = useState<Record<ReportType, Report | null> | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    getReports()
+      .then(setReports)
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load reports"));
+  }, []);
+  if (error) return <p className="text-sm text-destructive">{error}</p>;
+  if (!reports) return <p className="flex items-center gap-2 p-4 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading reports…</p>;
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        The daily task makes each report when it is due and saves it here. "Make now" builds a fresh one from today's data.
+      </p>
+      {(Object.keys(REPORT_INFO) as ReportType[]).map((type) => (
+        <ReportCard key={type} type={type} report={reports[type]} onMade={(r) => setReports((all) => (all ? { ...all, [type]: r } : all))} />
+      ))}
+    </div>
+  );
+}
+
 function Exposure({ data }: { data: SpendingData }) {
   return (
     <Card>
@@ -306,6 +484,8 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
   const s = data.settings;
   const [periodEnd, setPeriodEnd] = useState(s.periodEnd === "month-end" ? "" : String(s.periodEnd));
   const [buffer, setBuffer] = useState(String(Math.round(s.buffer / K)));
+  const [months, setMonths] = useState(String(s.baselineMonths));
+  const [subtract, setSubtract] = useState(s.subtractExpected);
   const [overdraft, setOverdraft] = useState(s.overdraft ?? { limitAccountId: "", accountId: "" });
   const [groups, setGroups] = useState<CreditLimitGroup[]>(s.creditLimits);
   const [flexible, setFlexible] = useState<Set<string>>(new Set(s.flexibleCategoryIds));
@@ -339,6 +519,8 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
       await saveSpendingSettings({
         periodEnd: periodEnd ? Number(periodEnd) : "month-end",
         buffer: Math.round((Number(buffer) || 0) * K),
+        baselineMonths: Number(months) || 6,
+        subtractExpected: subtract,
         overdraft: overdraft.limitAccountId && overdraft.accountId ? overdraft : null,
         creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || "Cards" })),
         flexibleCategoryIds: [...flexible],
@@ -371,6 +553,28 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
           <label className="space-y-1">
             <span className="font-medium">Buffer (₪, kept aside in the cash-flow number)</span>
             <Input value={buffer} onChange={(e) => setBuffer(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className="h-8" />
+          </label>
+          <label className="space-y-1">
+            <span className="font-medium">Normal spending is measured over (months)</span>
+            <Input
+              value={months}
+              onChange={(e) => setMonths(e.target.value.replace(/\D/g, "").slice(0, 2))}
+              inputMode="numeric"
+              className="h-8"
+              aria-describedby="months-help"
+            />
+            <span id="months-help" className="text-xs text-muted-foreground">
+              1 to 24 full months before this one. The middle value is used.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 pt-6">
+            <input type="checkbox" className="mt-1" checked={subtract} onChange={(e) => setSubtract(e.target.checked)} />
+            <span>
+              <span className="font-medium">Subtract normal spending still expected this period</span>
+              <span className="block text-xs text-muted-foreground">
+                On: "left to spend" is what you can spend on top of your usual life. Off: the total before usual spending.
+              </span>
+            </span>
           </label>
         </section>
 
@@ -542,11 +746,13 @@ export function SpendingPage() {
               <span className="rounded-full bg-primary px-1.5 text-[11px] leading-4 text-primary-foreground">{data.suggestions.length}</span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
           <Headline data={data} onMode={setMode} />
+          <PaceCard data={data} />
           {data.suggestions.length > 0 && (
             <button
               className="flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
@@ -581,6 +787,10 @@ export function SpendingPage() {
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="reports">
+          <ReportsPanel />
         </TabsContent>
 
         <TabsContent value="settings">

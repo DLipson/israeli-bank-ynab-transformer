@@ -310,6 +310,26 @@ export interface SpendingSettings {
   creditLimits: CreditLimitGroup[];
   overdraft: { limitAccountId: string; accountId: string } | null;
   ignoredSuggestions: string[];
+  baselineMonths: number;
+  subtractExpected: boolean;
+}
+
+export interface Pace {
+  name: string;
+  normalMonth: number;
+  normalByToday: number;
+  thisMonth: number;
+  difference: number | null;
+  status: "under" | "on" | "over" | "fixed-paid" | "fixed-due";
+}
+
+export interface Baseline {
+  months: number;
+  asOf: string;
+  total: Pace;
+  categories: Pace[];
+  uncategorized: number;
+  topOver: Pace[];
 }
 
 export interface ScheduleSuggestion {
@@ -336,6 +356,8 @@ export interface SpendingData {
   obligations: Array<{ month: string; installments: number; scheduled: number; total: number }>;
   suggestions: ScheduleSuggestion[];
   scheduledCount: number;
+  baseline: Baseline;
+  uncategorizedCount: number;
   accounts: Array<{ id: string; name: string; type: string; balance: number }>;
   categories: CategoryOption[];
 }
@@ -360,4 +382,28 @@ export async function createScheduled(s: {
 
 export async function ignoreScheduleSuggestion(id: string): Promise<void> {
   await request("/spending/ignore", { method: "POST", body: JSON.stringify({ id }) });
+}
+
+// --- Reports ---
+
+export type ReportType = "weekly" | "month-start" | "month-end";
+
+export interface Report {
+  type: ReportType;
+  title: string;
+  generatedAt: string;
+  dataAsOf: string;
+  sections: Array<{
+    title: string;
+    rows: Array<{ label: string; value: string; tone?: "good" | "bad" | "warn" | "muted" }>;
+    note?: string;
+  }>;
+}
+
+export async function getReports(): Promise<Record<ReportType, Report | null>> {
+  return request("/spending/reports");
+}
+
+export async function generateReport(type: ReportType): Promise<Report> {
+  return request(`/spending/reports/${type}`, { method: "POST" });
 }
