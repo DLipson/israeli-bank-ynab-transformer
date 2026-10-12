@@ -192,6 +192,37 @@ Today: installments 797 next month, 655, then 255 x 6, then 20 x 5; remaining to
 - YNAB scheduled transactions: 0.
 - Card limits from scrapers: only Max reports CreditLimit (read in israeli-bank-scrapers max.ts).
 
+## Plan: reports + spending baseline (draft v1, 2026-10-12, waiting for approval)
+
+### A. Baseline and pace (engine)
+- Two jobs, two inputs (revised 2026-10-12 after user challenge):
+  - Describe the month (normal-month total, pace, reports): ALL real spending = outflows except transfers without a category (on-budget to on-budget). Rent, loans, installments, cash withdrawals, and uncategorized stay in.
+  - Predict the rest of the month (the subtraction in left-to-spend): the same, minus what left-to-spend already counts (YNAB-scheduled payees on the same account, installment charges), so nothing counts twice.
+  - Categories that are mostly one fixed payment (e.g. rent) show paid / not paid instead of a pace percentage.
+- Baseline per category and in total: the median of the last 6 full months.
+- Pace: compare spending so far this month with the median spending up to the same day in those 6 months (not a straight line, because spending is lumpy).
+- Expected spending for the rest of the month = median month total - median spending up to today's day. Shown as a new line in the cash-flow number ("Expected normal spending, rest of month"), with a setting to turn it off.
+- Output: total and per-category status (on pace / over pace by X%), top 3 over pace.
+
+### B. Reports (same content in the app and by email)
+- Weekly (default Sunday morning): left to spend (both modes), pace and top 3 categories over pace, scheduled payments in the next 7 days, credit unused per group, items needing attention (schedule suggestions, uncategorized transactions), data date (last import).
+- Start of month (1st): last month in one line; this month's capacity; installments and scheduled payments this month; next 3 months of obligations.
+- End of month (last day): actual vs. plan per category (spent vs. YNAB assigned and vs. baseline), total, biggest differences.
+- In the app: a Reports sub-tab shows the latest report of each type, with "Send now by email".
+- Email: Gmail SMTP (existing nodemailer code; smtp.gmail.com:465 is reachable through NetFree). Needs GMAIL_SMTP_USER, GMAIL_SMTP_APP_PASSWORD (Google app password), recipient; entered by the user in the app and stored in Windows Credential Manager.
+
+### C. Scheduling
+- One Windows Task Scheduler task runs `npm run report:send` daily at a set hour; the script decides which reports are due and remembers the last send per type (state file), so a missed day (PC off) sends once later ("run when available").
+- Creating the task changes Windows configuration: only with the user's yes.
+- The report uses YNAB data as of the last bank import; it shows that date.
+
+### Open decisions
+1. Delivery: email + in-app, or in-app only first?
+2. Weekly day and hour.
+3. Subtract expected normal spending in the cash-flow number by default?
+4. Baseline window: 6 months?
+5. Create the Windows scheduled task (after the build)?
+
 ## Next steps
 
 1. Configure Dough: spending account, income, bills.
@@ -256,3 +287,10 @@ Today: installments 797 next month, 655, then 255 x 6, then 20 x 5; remaining to
   - hb2.bankleumi.co.il/H/Login.html: curl 200 in 0.5 s; headless Chrome gets NO response (45 s timeout, stays about:blank); a visible Chrome window loads it in ~6 s (redirect to /staticcontent/gate-keeper/he/...) with the full login form.
   - Fix (no bot-detection evasion): fork `israeli-bank-scrapers/src/scrapers/leumi.ts` goes straight to `${BASE_URL}/H/Login.html` with waitUntil "domcontentloaded" and waits for the form fields; this repo forces a visible browser for banks with `requiresVisibleBrowser` (Leumi) in `src/banks.ts` / `src/scraper.ts`. Fork rebuilt (`npm run build:js && npm run build:types`); this repo links to it (node_modules symlink).
   - Verified 2026-10-12: the user ran a real Leumi scrape from the app and it worked. Fork commit: `a165cec` on branch `fix/leumi-direct-login` in israeli-bank-scrapers.
+- 2026-10-12: User merged both branches into master and saved the Serper key. Handoff replaced by `HANDOFF-financial-intelligence.md` (living snapshot, updated after every step; includes the full roadmap from the original conversation).
+- 2026-10-12: Wrote the reports + baseline plan (see "Plan: reports + spending baseline"). Checked: Gmail SMTP reachable through NetFree (smtp.gmail.com:465 TLS ok); Gmail env vars not set; no Windows scheduled task exists.
+- 2026-10-12: Plan decisions: (1) in-app reports only first, email later; (2) weekly report Sunday 10:00; (4) baseline 6 months, configurable; (5) create the Windows scheduled task after the build. (3) still open: subtract expected normal spending (rest of month) in the cash-flow number? Recommended yes, with a setting. Rough real numbers shown to the user: normal month ~25,600 variable, ~14,800 by day 11; October by day 11 only 4,246 (data probably not fully imported).
+- 2026-10-12: Revised baseline inputs after the user asked if the excluded data is needed: keep all real spending for describing the month and for pace; exclude scheduled payments and installments only from the rest-of-month prediction; exclude only uncategorized transfers (on-budget to on-budget) everywhere.
+- 2026-10-12: CORRECTION: headless Chrome is NOT blocked by hb2.bankleumi.co.il. Retests loaded the login form headless 3/3 times (1.3-4.7 s); curl with a HeadlessChrome User-Agent gets the same redirects as normal Chrome. The earlier 45 s "no response" was a one-off. The `requiresVisibleBrowser` rule for Leumi (commit 0a020f3) was reverted on request; the user will test a headless Leumi scrape.
+- 2026-10-12: Merged upstream eshaham/israeli-bank-scrapers into the fork on branch `merge-upstream-2026-10` (fork commits 162f8dc merge, d39ed02 test, 270daec style, 67c02f9 forex dates). Only conflict: import block of src/scrapers/leumi/leumi.ts (upstream moved leumi.ts into src/scrapers/leumi/). New from upstream: Leumi foreign-currency accounts, Isracard and Visa Cal card balances, Mizrahi change-password fix. Fork jest: 20 suites pass (35 tests skipped, need credentials). Upstream's leumi-forex.ts used toISOString() (UTC); changed to toISOString(true) like the fork's other scrapers. Library rebuilt; this repo: tsc ok, 152 tests pass.
+- 2026-10-12: Upstream's own Leumi login fix (inferred to fail here): it still opens www.leumi.co.il/he first with waitUntil "load", which did not finish in 45 s on this network (NetFree 418 on trackers, Radware hCaptcha in rate iframes); then it does goto /authenticate/logon plus waitForNavigation(networkidle2), the extra wait the fork removed in 864926f. Most upstream users are not behind NetFree (inferred), so their "load" event fires.
