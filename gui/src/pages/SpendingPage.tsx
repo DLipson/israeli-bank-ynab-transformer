@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarPlus, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
@@ -141,63 +140,98 @@ function SuggestionRow({
     }
   };
 
+  const [open, setOpen] = useState(false);
   const amountValue = Number(amount);
-  const valid = payee.trim() && amountValue > 0 && date;
+  const valid = Boolean(payee.trim() && amountValue > 0 && date);
+  const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "No category";
+  const create = () =>
+    run(() =>
+      createScheduled({ accountId: s.accountId, date, amount: Math.round(amountValue * K), payeeName: payee, categoryId: categoryId || null })
+    );
 
+  // One compact line; the edit fields open below it. The line always shows the values that Create will use.
   return (
-    <div className="space-y-2 rounded-md border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input value={payee} onChange={(e) => setPayee(e.target.value)} dir="auto" className="h-8 min-w-48 flex-1" aria-label="Payee" />
-        <div className="flex items-center gap-1">
-          <span className="text-sm text-muted-foreground">₪</span>
-          <Input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
-            inputMode="decimal"
-            className="h-8 w-24 text-right"
-            aria-label="Amount"
-          />
-        </div>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="First date" />
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>Monthly · {accountName} · seen {s.months} of the last 4 months</span>
-        <select
-          className="h-7 rounded-md border border-input bg-background px-2 text-xs"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          aria-label="Category"
+    <div className={cn("rounded-md border", open && "bg-muted/30")}>
+      <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          title={open ? "Close" : "Edit before creating"}
         >
-          <option value="">No category</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.group} / {c.name}
-            </option>
-          ))}
-        </select>
-        {s.amountVaries && (
-          <Badge variant="warning" title="YNAB matches an imported transaction to a scheduled one only when the amount is exactly the same.">
-            Amount varies: imports may not match
-          </Badge>
-        )}
-        <div className="ml-auto flex gap-1">
-          <Button
-            size="sm"
-            disabled={busy || !valid}
-            onClick={() =>
-              run(() =>
-                createScheduled({ accountId: s.accountId, date, amount: Math.round(amountValue * K), payeeName: payee, categoryId: categoryId || null })
-              )
-            }
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarPlus className="h-3.5 w-3.5" />} Create in YNAB
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => ignoreScheduleSuggestion(s.id))} title="Ignore this suggestion">
-            <X className="h-3.5 w-3.5" /> Ignore
-          </Button>
-        </div>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+          <span className="line-clamp-2 break-words font-medium" dir="auto">
+            {payee}
+          </span>
+          {s.amountVaries && (
+            <AlertTriangle
+              className="h-3.5 w-3.5 shrink-0 text-amber-600"
+              aria-label="Amount varies"
+            />
+          )}
+        </button>
+        <span className="shrink-0 text-right font-mono">₪{amountValue.toLocaleString("en-US")}</span>
+        <span className="hidden w-14 shrink-0 text-xs text-muted-foreground sm:block">{formatDate(date)}</span>
+        <span className="hidden w-36 shrink-0 truncate text-xs text-muted-foreground md:block" dir="auto" title={categoryName}>
+          {categoryName}
+        </span>
+        <Button size="sm" className="h-7 px-2" disabled={busy || !valid} onClick={create} title="Create a monthly scheduled transaction in YNAB">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarPlus className="h-3.5 w-3.5" />} Create
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2"
+          disabled={busy}
+          onClick={() => run(() => ignoreScheduleSuggestion(s.id))}
+          title="Ignore this suggestion"
+          aria-label="Ignore"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {open && (
+        <div className="space-y-2 border-t px-3 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input value={payee} onChange={(e) => setPayee(e.target.value)} dir="auto" className="h-8 min-w-48 flex-1" aria-label="Payee" />
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-muted-foreground">₪</span>
+              <Input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                inputMode="decimal"
+                className="h-8 w-24 text-right"
+                aria-label="Amount"
+              />
+            </div>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="First date" />
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              aria-label="Category"
+            >
+              <option value="">No category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.group} / {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Monthly · {accountName} · seen in {s.months} of the last 4 months
+          </p>
+          {s.amountVaries && (
+            <p className="flex items-start gap-1 text-xs text-amber-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> The amount changed between months. YNAB matches an
+              imported transaction to a scheduled one only when the amount is exactly the same, so you may get a duplicate.
+            </p>
+          )}
+        </div>
+      )}
+      {error && <p className="px-3 pb-2 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -509,7 +543,7 @@ export function SpendingPage() {
               create them. Created ones count as fixed payments.
             </p>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-1.5">
             {data.suggestions.map((s) => (
               <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
             ))}
