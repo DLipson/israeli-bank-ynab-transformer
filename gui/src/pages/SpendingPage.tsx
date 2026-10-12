@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarPlus, ChevronRight, Loader2, Plus, Trash2, X } f
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   createScheduled,
@@ -353,9 +354,8 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
 
   const select = "h-8 rounded-md border border-input bg-background px-2 text-sm";
   return (
-    <details className="rounded-xl border bg-card p-4">
-      <summary className="cursor-pointer text-base font-semibold">Settings</summary>
-      <div className="mt-4 space-y-6 text-sm">
+    <Card>
+      <CardContent className="space-y-6 p-5 text-sm">
         <section className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="font-medium">Period ends</span>
@@ -463,13 +463,14 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
           </Button>
           {message && <span className={cn("text-sm", message === "Saved." ? "text-green-700" : "text-destructive")}>{message}</span>}
         </div>
-      </div>
-    </details>
+      </CardContent>
+    </Card>
   );
 }
 
 export function SpendingPage() {
   const [data, setData] = useState<SpendingData | null>(null);
+  const [view, setView] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latest = useRef(0);
@@ -532,31 +533,60 @@ export function SpendingPage() {
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Headline data={data} onMode={setMode} />
+      <Tabs value={view} onValueChange={setView}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="schedules" className="gap-1.5">
+            Schedules
+            {data.suggestions.length > 0 && (
+              <span className="rounded-full bg-primary px-1.5 text-[11px] leading-4 text-primary-foreground">{data.suggestions.length}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      {data.suggestions.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Suggested scheduled transactions ({data.suggestions.length})</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Payments that repeated in your history and have no schedule in YNAB. Check the name, amount, and date, then
-              create them. Created ones count as fixed payments.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {data.suggestions.map((s) => (
-              <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
-            ))}
-          </CardContent>
-        </Card>
-      )}
+        <TabsContent value="overview" className="space-y-4">
+          <Headline data={data} onMode={setMode} />
+          {data.suggestions.length > 0 && (
+            <button
+              className="flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+              onClick={() => setView("schedules")}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              {data.suggestions.length} repeating payments have no schedule yet, so the cash-flow number does not subtract them.
+              <span className="ml-auto font-medium text-foreground">Review →</span>
+            </button>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Exposure data={data} />
+            <Obligations data={data} />
+          </div>
+        </TabsContent>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Exposure data={data} />
-        <Obligations data={data} />
-      </div>
+        <TabsContent value="schedules">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Suggested scheduled transactions</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Payments that repeated in your history and have no schedule in YNAB. Create makes a monthly scheduled
+                transaction with the values on the line; click a name to edit them first.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {data.suggestions.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">No suggestions. Every repeating payment has a schedule.</p>
+              )}
+              {data.suggestions.map((s) => (
+                <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={load} />
+        <TabsContent value="settings">
+          <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={load} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
