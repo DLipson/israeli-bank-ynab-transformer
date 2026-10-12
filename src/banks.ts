@@ -11,12 +11,6 @@ export interface BankDefinition {
   companyId: CompanyTypes;
   /** Maps credential field name to environment variable name */
   credentialFields: Record<string, string>;
-  /** The bank's site does not answer headless Chrome, so this bank always scrapes in a visible window. */
-  requiresVisibleBrowser?: boolean;
-}
-
-export function requiresVisibleBrowser(companyId: CompanyTypes): boolean {
-  return BANK_DEFINITIONS.some((bank) => bank.companyId === companyId && bank.requiresVisibleBrowser);
 }
 
 /**
@@ -31,8 +25,6 @@ export const BANK_DEFINITIONS: BankDefinition[] = [
       username: "LEUMI_USERNAME",
       password: "LEUMI_PASSWORD",
     },
-    // Since October 2026, hb2.bankleumi.co.il gives headless Chrome no response (a visible window loads in ~6 s).
-    requiresVisibleBrowser: true,
   },
   {
     name: "Hapoalim",

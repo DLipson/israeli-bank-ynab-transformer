@@ -3,9 +3,7 @@ import { createScraper } from "israeli-bank-scrapers";
 import { scrapeAccount } from "./scraper.js";
 import type { AccountConfig } from "./config.js";
 
-vi.mock("israeli-bank-scrapers", async (importOriginal) => ({
-  // Keep CompanyTypes and the rest; banks.ts needs them.
-  ...(await importOriginal<typeof import("israeli-bank-scrapers")>()),
+vi.mock("israeli-bank-scrapers", () => ({
   createScraper: vi.fn(),
 }));
 
@@ -19,22 +17,6 @@ describe("scrapeAccount", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it("always shows the browser for banks that block headless Chrome, and follows the setting for others", async () => {
-    mockedCreateScraper.mockReturnValue(makeScraper({ success: true, accounts: [] }));
-
-    await scrapeAccount(makeAccount(), new Date("2026-06-01"), false);
-    await scrapeAccount({ ...makeAccount(), name: "Max", companyId: "max" as AccountConfig["companyId"] }, new Date("2026-06-01"), false);
-
-    const shown = mockedCreateScraper.mock.calls.map(([options]) => [
-      options.companyId,
-      (options as { showBrowser?: boolean }).showBrowser,
-    ]);
-    expect(shown).toEqual([
-      ["leumi", true],
-      ["max", false],
-    ]);
   });
 
   it("retries once after a timeout before returning the account result", async () => {

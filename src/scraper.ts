@@ -1,6 +1,5 @@
 import { createScraper, type ScraperOptions } from "israeli-bank-scrapers";
 import type { AccountConfig } from "./config.js";
-import { requiresVisibleBrowser } from "./banks.js";
 import type { EnrichedTransaction } from "./transformer.js";
 
 export interface ScrapeResult {
@@ -28,7 +27,7 @@ export async function scrapeAccount(
     companyId: account.companyId,
     startDate,
     combineInstallments: false, // Keep installments separate for proper YNAB handling
-    showBrowser: showBrowser || requiresVisibleBrowser(account.companyId),
+    showBrowser,
     verbose: false,
   };
 
