@@ -63,7 +63,7 @@ describe("scrapeAccount", () => {
     expect(mockedCreateScraper).toHaveBeenCalledTimes(2);
     expect(firstScraper.scrape).toHaveBeenCalledTimes(1);
     expect(secondScraper.scrape).toHaveBeenCalledTimes(1);
-    expect(progress).toContain("  Timeout scraping Leumi. Retrying in 3 seconds...");
+    expect(progress).toContain("  Temporary error scraping Leumi. Retrying in 3 seconds...");
   });
 
   it("returns the timeout failure after the retry also times out", async () => {
@@ -115,7 +115,21 @@ describe("scrapeAccount", () => {
 
     await expect(promise).resolves.toMatchObject({ accountName: "Leumi", success: true });
     expect(mockedCreateScraper).toHaveBeenCalledTimes(2);
-    expect(progress).toContain("  Timeout scraping Leumi. Retrying in 3 seconds...");
+    expect(progress).toContain("  Temporary error scraping Leumi. Retrying in 3 seconds...");
+  });
+
+  it("retries once after a Chrome network error such as ERR_ABORTED", async () => {
+    mockedCreateScraper
+      .mockReturnValueOnce(
+        makeScraper({ success: false, errorType: "GENERIC", errorMessage: "net::ERR_ABORTED at https://hb2.bankleumi.co.il/H/Login.html" })
+      )
+      .mockReturnValueOnce(makeScraper({ success: true, accounts: [] }));
+
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false);
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await expect(promise).resolves.toMatchObject({ accountName: "Leumi", success: true });
+    expect(mockedCreateScraper).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry non-timeout scraper failures", async () => {

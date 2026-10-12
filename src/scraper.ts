@@ -43,8 +43,8 @@ export async function scrapeAccount(
       const result = await scraper.scrape(credentials);
 
       if (!result.success) {
-        if (attempt === 1 && (result.errorType === TIMEOUT_ERROR_TYPE || isTimeoutMessage(result.errorMessage))) {
-          await waitBeforeTimeoutRetry(account.name, onProgress);
+        if (attempt === 1 && (result.errorType === TIMEOUT_ERROR_TYPE || isTransientMessage(result.errorMessage))) {
+          await waitBeforeRetry(account.name, onProgress);
           continue;
         }
 
@@ -81,8 +81,8 @@ export async function scrapeAccount(
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (isTimeoutMessage(message) && attempt === 1) {
-        await waitBeforeTimeoutRetry(account.name, onProgress);
+      if (isTransientMessage(message) && attempt === 1) {
+        await waitBeforeRetry(account.name, onProgress);
         continue;
       }
 
@@ -99,15 +99,17 @@ export async function scrapeAccount(
   throw new Error(`Unexpected scrape retry state for ${account.name}`);
 }
 
-function isTimeoutMessage(message: string | undefined): boolean {
-  return (message ?? "").toLowerCase().includes("timeout");
+/** Timeouts and Chrome network errors (net::ERR_...) are often temporary, so they get one retry. */
+function isTransientMessage(message: string | undefined): boolean {
+  const text = message ?? "";
+  return text.toLowerCase().includes("timeout") || text.includes("net::ERR_");
 }
 
-async function waitBeforeTimeoutRetry(
+async function waitBeforeRetry(
   accountName: string,
   onProgress?: (message: string, accountName?: string) => void
 ): Promise<void> {
-  onProgress?.(`  Timeout scraping ${accountName}. Retrying in 3 seconds...`, accountName);
+  onProgress?.(`  Temporary error scraping ${accountName}. Retrying in 3 seconds...`, accountName);
   await new Promise((resolve) => setTimeout(resolve, TIMEOUT_RETRY_DELAY_MS));
 }
 
