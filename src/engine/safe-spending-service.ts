@@ -10,6 +10,7 @@ import {
   leftYnab,
   obligations,
   periodEndDate,
+  scheduledOutflows,
   spendingCategories,
   suggestScheduled,
   type Account,
@@ -18,7 +19,8 @@ import {
   type Settings,
   type Snapshot,
 } from "./safe-spending.js";
-import { baseline, spendItems } from "./baseline.js";
+import { baseline, pastMonths, spendItems } from "./baseline.js";
+import { isUncategorized } from "../ynab/categorize.js";
 
 function settingsPath(): string {
   return join(getAppConfigDir(), "safe-spending.json");
@@ -77,6 +79,8 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const end = periodEndDate(today, settings.periodEnd);
   const items = spendItems(transactions);
   const spendBaseline = baseline(items, dataAsOf(transactions, today), settings.baselineMonths);
+  const previous = pastMonths(today, 1)[0];
+  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
   return {
     today,
@@ -90,6 +94,24 @@ export async function getSpending(token: string, today = new Date().toISOString(
     obligations: obligations(snapshot),
     suggestions: suggestScheduled(snapshot),
     baseline: spendBaseline,
+    upcoming: scheduledOutflows(scheduled, today, new Date(Date.parse(`${today}T00:00:00Z`) + 62 * 86400000).toISOString().slice(0, 10)),
+    previousMonth: {
+      month: previous,
+      spent: items.filter((i) => i.date.startsWith(previous)).reduce((sum, i) => sum + i.amount, 0),
+      normal: spendBaseline.total.normalMonth,
+    },
+    /** Spent in a month (yyyy-mm) from the same spending list as the baseline, for reports. */
+    monthTotals: (month: string) => {
+      const inMonth = items.filter((i) => i.date.startsWith(month));
+      return {
+        spent: inMonth.reduce((sum, i) => sum + i.amount, 0),
+        normal: spendBaseline.total.normalMonth,
+        uncategorized: inMonth.filter((i) => i.categoryId === "Uncategorized").reduce((sum, i) => sum + i.amount, 0),
+      };
+    },
+    uncategorizedCount: transactions.filter(
+      (t) => !t.deleted && t.date >= since && !t.transfer_account_id && !t.subtransactions?.length && isUncategorized(t)
+    ).length,
     scheduledCount: scheduled.filter((s) => !s.deleted).length,
     accounts: accounts
       .filter((a) => a.on_budget && !a.closed && !a.deleted)

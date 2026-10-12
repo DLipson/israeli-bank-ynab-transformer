@@ -23,7 +23,8 @@
     "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:gui\"",
     "dev:all:with-scrapers": "npm --prefix ../israeli-bank-scrapers run build:js && npm --prefix ../israeli-bank-scrapers run build:types && concurrently \"npm run dev:server\" \"npm run dev:gui\" \"npm --prefix ../israeli-bank-scrapers run watch\"",
     "report:send-daily": "tsx src/ynab/send-daily-report-email.ts",
-    "report:send-now": "tsx src/ynab/send-daily-report-email.ts --force"
+    "report:send-now": "tsx src/ynab/send-daily-report-email.ts --force",
+    "report:spending": "tsx src/engine/run-reports.ts"
   },
   "dependencies": {
     "commander": "^12.1.0",

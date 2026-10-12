@@ -9,6 +9,8 @@ import {
   saveSettings,
 } from "../../engine/safe-spending-service.js";
 import type { CreditLimitGroup, Settings } from "../../engine/safe-spending.js";
+import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
+import type { ReportType } from "../../engine/reports.js";
 
 const router = Router();
 
@@ -128,6 +130,19 @@ router.post(
     const { id } = req.body as { id?: unknown };
     if (typeof id !== "string" || !id) throw new Error("id is required.");
     return ignoreSuggestion(id);
+  })
+);
+
+router.get("/reports", handle(() => latestReports()));
+
+/** Makes one report now and saves it (read-only towards YNAB). */
+router.post(
+  "/reports/:type",
+  handle(async (req) => {
+    const type = String(req.params.type) as ReportType;
+    if (!REPORT_TYPES.includes(type)) throw new Error(`type must be one of: ${REPORT_TYPES.join(", ")}.`);
+    loadAppEnv({ override: true });
+    return generateReport(getYnabToken(), type);
   })
 );
 
