@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarPlus, CheckCircle2, ChevronDown, Clock, CreditCard, Loader2, RefreshCw, Tag } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, ChevronDown, Clock, CreditCard, Loader2, RefreshCw, Tag } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,16 @@ function attentionItems(data: SpendingData, navigate: Navigate): Attention[] {
       text: `${n} transaction${n === 1 ? " is" : "s are"} not categorized`,
       action: "Review",
       go: () => navigate("review", "categorize"),
+    });
+  }
+  if (data.anomalies.length) {
+    const n = data.anomalies.length;
+    items.push({
+      key: "unusual",
+      icon: AlertTriangle,
+      text: `${n} unusual item${n === 1 ? "" : "s"} to check`,
+      action: "Review",
+      go: () => navigate("review", "unusual"),
     });
   }
   if (data.exposure.some((g) => g.limit === null && g.used > 0)) {

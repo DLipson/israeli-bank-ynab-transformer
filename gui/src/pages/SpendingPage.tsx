@@ -11,6 +11,8 @@ import {
   getSpending,
   ignoreScheduleSuggestion,
   saveSpendingSettings,
+  dismissAnomaly,
+  type Anomaly,
   type CategoryOption,
   type CreditLimitGroup,
   type LeftToSpend,
@@ -738,4 +740,69 @@ export function SpendingSettingsPanel() {
   const { data, reload } = useSpending();
   if (!data) return <SpendingLoading />;
   return <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={reload} />;
+}
+
+const ANOMALY_LABEL: Record<Anomaly["kind"], string> = {
+  "unusual-charge": "Unusual charge",
+  "new-payee": "New payee",
+  duplicate: "Possible duplicate",
+  "category-spike": "Category over normal",
+  "price-increase": "Price went up",
+};
+
+/** Unusual things from the last 30 days. Dismiss hides a finding for good (it never writes to YNAB). */
+export function AnomaliesPanel() {
+  const { data, reload } = useSpending();
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [error, setError] = useState("");
+  if (!data) return <SpendingLoading />;
+  const list = data.anomalies.filter((a) => !hidden.has(a.id));
+
+  const dismiss = async (id: string) => {
+    setHidden((h) => new Set(h).add(id));
+    setError("");
+    try {
+      await dismissAnomaly(id);
+      reload();
+    } catch (e) {
+      setHidden((h) => {
+        const next = new Set(h);
+        next.delete(id);
+        return next;
+      });
+      setError(e instanceof Error ? e.message : "Dismiss failed");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Unusual in the last 30 days</CardTitle>
+        <p className="text-xs text-muted-foreground">Things worth a look. Dismiss one when it is fine; it will not come back.</p>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </CardHeader>
+      <CardContent className="divide-y">
+        {list.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Nothing unusual.</p>}
+        {list.map((a) => (
+          <div key={a.id} className="flex items-start gap-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">{ANOMALY_LABEL[a.kind]}</span>
+                <span className="text-xs text-muted-foreground">{formatDate(a.date)}</span>
+              </div>
+              <p className="mt-0.5 text-sm font-medium" dir="auto">
+                {a.title.replace(/^[^:]+: /, "")}
+              </p>
+              <p className="text-xs text-muted-foreground" dir="auto">
+                {a.detail}
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" onClick={() => dismiss(a.id)}>
+              <X className="h-3.5 w-3.5" /> Dismiss
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
 }

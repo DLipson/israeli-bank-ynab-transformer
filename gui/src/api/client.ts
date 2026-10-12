@@ -323,6 +323,16 @@ export interface Pace {
   status: "under" | "on" | "over" | "fixed-paid" | "fixed-due";
 }
 
+export interface Anomaly {
+  id: string;
+  kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase";
+  date: string;
+  title: string;
+  detail: string;
+  amount: number;
+  transactionIds: string[];
+}
+
 export interface Baseline {
   months: number;
   asOf: string;
@@ -358,6 +368,7 @@ export interface SpendingData {
   scheduledCount: number;
   baseline: Baseline;
   uncategorizedCount: number;
+  anomalies: Anomaly[];
   accounts: Array<{ id: string; name: string; type: string; balance: number }>;
   categories: CategoryOption[];
 }
@@ -406,4 +417,8 @@ export async function getReports(): Promise<Record<ReportType, Report | null>> {
 
 export async function generateReport(type: ReportType): Promise<Report> {
   return request(`/spending/reports/${type}`, { method: "POST" });
+}
+
+export async function dismissAnomaly(id: string): Promise<void> {
+  await request("/spending/anomalies/dismiss", { method: "POST", body: JSON.stringify({ id }) });
 }

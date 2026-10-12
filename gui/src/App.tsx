@@ -6,7 +6,7 @@ import { YnabPage } from "@/pages/YnabPage";
 import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
-import { ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
+import { AnomaliesPanel, ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
 import { useSpending } from "@/lib/spending";
 
 /** A second row of tabs inside a top tab (e.g. Review: Categorize | Schedules). */
@@ -52,6 +52,7 @@ function Shell() {
   };
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
+  const unusual = data?.anomalies.length ?? 0;
 
   return (
     <div className="mx-auto max-w-4xl p-6">
@@ -62,7 +63,7 @@ function Shell() {
           <TabsTrigger value="home">Home</TabsTrigger>
           <TabsTrigger value="scrape">Scrape</TabsTrigger>
           <TabsTrigger value="review" className="gap-1.5">
-            Review <Count n={schedules + uncategorized} />
+            Review <Count n={schedules + uncategorized + unusual} />
           </TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="setup">Setup</TabsTrigger>
@@ -90,6 +91,7 @@ function Shell() {
             items={[
               { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
               { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
+              { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
             ]}
           />
         </TabsContent>
