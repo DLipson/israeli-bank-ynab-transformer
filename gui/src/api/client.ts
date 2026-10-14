@@ -2,8 +2,11 @@ const BASE = "/api";
 
 export interface AccountInfo {
   name: string;
+  bankName: string;
+  companyId: string;
   fields: string[];
   enabled: boolean;
+  primary: boolean;
 }
 
 export interface YnabRow {
@@ -77,6 +80,10 @@ export async function saveCredentials(name: string, credentials: Record<string, 
 
 export async function deleteCredentials(name: string): Promise<void> {
   await request(`/accounts/${encodeURIComponent(name)}/credentials`, { method: "DELETE" });
+}
+
+export async function createAccount(bankName: string, accountName: string): Promise<void> {
+  await request("/accounts", { method: "POST", body: JSON.stringify({ bankName, accountName }) });
 }
 // --- Scrape SSE ---
 

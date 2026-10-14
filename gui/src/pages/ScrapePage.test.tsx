@@ -7,8 +7,8 @@ vi.mock("@/api/client", async () => {
   return {
     ...actual,
     getAccounts: vi.fn().mockResolvedValue([
-      { name: "Account A", fields: [], enabled: true },
-      { name: "Account B", fields: [], enabled: false },
+      { name: "Account A", bankName: "Leumi", companyId: "leumi", fields: [], enabled: true, primary: true },
+      { name: "Account B", bankName: "Hapoalim", companyId: "hapoalim", fields: [], enabled: false, primary: true },
     ]),
   };
 });

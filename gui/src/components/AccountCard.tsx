@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +10,10 @@ import { saveCredentials, deleteCredentials } from "@/api/client";
 interface AccountCardProps {
   account: AccountInfo;
   onUpdated: () => void;
+}
+
+function fieldId(accountName: string, field: string): string {
+  return `${accountName}-${field}`.replace(/[^A-Za-z0-9_-]+/g, "_");
 }
 
 export function AccountCard({ account, onUpdated }: AccountCardProps) {
@@ -59,31 +62,32 @@ export function AccountCard({ account, onUpdated }: AccountCardProps) {
   };
 
   return (
-    <Card>
-      <CardHeader
-        className="cursor-pointer py-4"
+    <div className="rounded-md border">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between px-3 py-2 text-left"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <CardTitle className="text-base">{account.name}</CardTitle>
-          </div>
-          <Badge variant={account.enabled ? "success" : "secondary"}>
-            {account.enabled ? "Configured" : "Not configured"}
-          </Badge>
-        </div>
-      </CardHeader>
+        <span className="flex items-center gap-2">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <span className="text-sm font-medium">{account.name}</span>
+          {account.primary && <Badge variant="outline">Default</Badge>}
+        </span>
+        <Badge variant={account.enabled ? "success" : "secondary"}>
+          {account.enabled ? "Configured" : "Not configured"}
+        </Badge>
+      </button>
 
       {expanded && (
-        <CardContent className="pt-0">
-          <div className="space-y-3">
-            {account.fields.map((field) => (
+        <div className="space-y-3 border-t px-3 py-3">
+          {account.fields.map((field) => {
+            const id = fieldId(account.name, field);
+            return (
               <div key={field} className="space-y-1">
-                <Label htmlFor={`${account.name}-${field}`}>{field}</Label>
+                <Label htmlFor={id}>{field}</Label>
                 <div className="flex gap-2">
                   <Input
-                    id={`${account.name}-${field}`}
+                    id={id}
                     type={showFields[field] ? "text" : "password"}
                     value={fields[field] ?? ""}
                     onChange={(e) =>
@@ -101,28 +105,28 @@ export function AccountCard({ account, onUpdated }: AccountCardProps) {
                   </Button>
                 </div>
               </div>
-            ))}
+            );
+          })}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <div className="flex gap-2 pt-2">
-              <Button onClick={handleSave} disabled={saving} size="sm">
-                {saving ? "Saving..." : "Save"}
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleSave} disabled={saving} size="sm">
+              {saving ? "Saving..." : "Save"}
+            </Button>
+            {(account.enabled || !account.primary) && (
+              <Button
+                onClick={handleDelete}
+                disabled={deleting}
+                variant="destructive"
+                size="sm"
+              >
+                {deleting ? "Removing..." : "Remove"}
               </Button>
-              {account.enabled && (
-                <Button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  variant="destructive"
-                  size="sm"
-                >
-                  {deleting ? "Removing..." : "Remove"}
-                </Button>
-              )}
-            </div>
+            )}
           </div>
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
