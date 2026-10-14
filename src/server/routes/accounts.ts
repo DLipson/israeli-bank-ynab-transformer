@@ -1,5 +1,15 @@
 ﻿import { Router } from "express";
-import { BANK_DEFINITIONS } from "../../banks.js";
+import {
+  findBank,
+  findInstance,
+  instanceCredentialKeys,
+  instanceFieldKey,
+  isPrimaryInstance,
+  listInstances,
+  loadExtraInstances,
+  saveExtraInstances,
+  validateAccountName,
+} from "../../account-instances.js";
 import { readEnvFile, writeEnvFile, clearEnvVars } from "../env-io.js";
 import { ensureAppConfigDirExists, getEnvFilePath, loadAppEnv } from "../../env.js";
 import {
@@ -10,15 +20,18 @@ import {
 
 const router = Router();
 
-
 function getCredentialSourceEnvVars(): Record<string, string> {
   if (!isWindowsCredentialManagerAvailable()) {
     return readEnvFile(getEnvFilePath());
   }
 
   const vars: Record<string, string> = {};
-  for (const bank of BANK_DEFINITIONS) {
-    for (const envVar of Object.values(bank.credentialFields)) {
+  for (const instance of listInstances()) {
+    const bank = findBank(instance.bankName);
+    if (!bank) {
+      continue;
+    }
+    for (const envVar of instanceCredentialKeys(instance, bank)) {
       vars[envVar] = process.env[envVar] ?? "";
     }
   }
@@ -27,41 +40,81 @@ function getCredentialSourceEnvVars(): Record<string, string> {
 
 /**
  * GET /api/accounts
- * Returns all banks with their field names and enabled status.
- * Never sends credential values.
+ * Returns every configured login (one primary per bank plus any extra instances),
+ * with field names and enabled status. Never sends credential values.
  */
 router.get("/", (_req, res) => {
   // Refresh from credential storage so UI reflects external changes without a server restart.
   loadAppEnv({ override: true });
   const envVars = getCredentialSourceEnvVars();
 
-  const accounts = BANK_DEFINITIONS.map((bank) => {
-    const fields = Object.keys(bank.credentialFields);
-    const envKeys = Object.values(bank.credentialFields);
-    const allFilled = envKeys.every((envKey) => (envVars[envKey] ?? "").length > 0);
+  const accounts = listInstances()
+    .map((instance) => {
+      const bank = findBank(instance.bankName);
+      if (!bank) {
+        return null;
+      }
+      const envKeys = instanceCredentialKeys(instance, bank);
+      const enabled = envKeys.every((envKey) => (envVars[envKey] ?? "").length > 0);
 
-    return {
-      name: bank.name,
-      companyId: bank.companyId,
-      fields,
-      enabled: allFilled,
-    };
-  });
+      return {
+        name: instance.accountName,
+        bankName: instance.bankName,
+        companyId: bank.companyId,
+        fields: bank.fields,
+        enabled,
+        primary: isPrimaryInstance(instance),
+      };
+    })
+    .filter((account): account is NonNullable<typeof account> => account !== null);
 
   res.json({ accounts });
 });
 
 /**
+ * POST /api/accounts
+ * Adds an extra login for an institution.
+ */
+router.post("/", (req, res) => {
+  const { bankName, accountName } = req.body as { bankName?: string; accountName?: string };
+
+  if (!bankName || !findBank(bankName)) {
+    res.status(404).json({ error: `Bank "${bankName ?? ""}" not found` });
+    return;
+  }
+
+  const trimmed = (accountName ?? "").trim();
+  const error = validateAccountName(trimmed, bankName);
+  if (error) {
+    res.status(400).json({ error });
+    return;
+  }
+
+  try {
+    const extras = loadExtraInstances();
+    extras.push({ accountName: trimmed, bankName });
+    saveExtraInstances(extras);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+    return;
+  }
+
+  res.json({ success: true, account: { name: trimmed, bankName } });
+});
+
+/**
  * PUT /api/accounts/:name/credentials
- * Saves credentials for a bank to the app env file in ~/.config.
+ * Saves credentials for one login (primary uses the bank's env vars, extras use scoped keys).
  */
 router.put("/:name/credentials", (req, res) => {
   const { name } = req.params;
   const { credentials } = req.body as { credentials: Record<string, string> };
 
-  const bank = BANK_DEFINITIONS.find((b) => b.name === name);
-  if (!bank) {
-    res.status(404).json({ error: `Bank "${name}" not found` });
+  const instance = findInstance(name);
+  const bank = instance ? findBank(instance.bankName) : undefined;
+  if (!instance || !bank) {
+    res.status(404).json({ error: `Account "${name}" not found` });
     return;
   }
 
@@ -74,9 +127,10 @@ router.put("/:name/credentials", (req, res) => {
   loadAppEnv({ override: true });
   const existingEnvVars = getCredentialSourceEnvVars();
 
-  // Map credential field names to env var names. Empty fields keep the saved value.
+  // Map credential field names to storage keys. Empty fields keep the saved value.
   const updates: Record<string, string> = {};
-  for (const [field, envVar] of Object.entries(bank.credentialFields)) {
+  for (const field of bank.fields) {
+    const envVar = instanceFieldKey(instance, field);
     const value = credentials[field];
     const hasExistingValue = (existingEnvVars[envVar] ?? "").length > 0;
 
@@ -112,18 +166,19 @@ router.put("/:name/credentials", (req, res) => {
 
 /**
  * DELETE /api/accounts/:name/credentials
- * Clears credentials for a bank from the app env file in ~/.config.
+ * Clears a primary login's credentials (keeping the row) or removes an extra login entirely.
  */
 router.delete("/:name/credentials", (req, res) => {
   const { name } = req.params;
 
-  const bank = BANK_DEFINITIONS.find((b) => b.name === name);
-  if (!bank) {
-    res.status(404).json({ error: `Bank "${name}" not found` });
+  const instance = findInstance(name);
+  const bank = instance ? findBank(instance.bankName) : undefined;
+  if (!instance || !bank) {
+    res.status(404).json({ error: `Account "${name}" not found` });
     return;
   }
 
-  const envKeys = Object.values(bank.credentialFields);
+  const envKeys = instanceCredentialKeys(instance, bank);
 
   try {
     if (isWindowsCredentialManagerAvailable()) {
@@ -138,6 +193,10 @@ router.delete("/:name/credentials", (req, res) => {
       delete process.env[key];
     }
 
+    if (!isPrimaryInstance(instance)) {
+      saveExtraInstances(loadExtraInstances().filter((extra) => extra.accountName !== name));
+    }
+
     loadAppEnv({ override: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -149,4 +208,3 @@ router.delete("/:name/credentials", (req, res) => {
 });
 
 export default router;
-
