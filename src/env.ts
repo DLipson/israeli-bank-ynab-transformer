@@ -1,46 +1,20 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import dotenv from "dotenv";
 import { hydrateEnvWithStoredBankCredentials } from "./windows-credential-manager.js";
+import { getEnvFilePath } from "./paths.js";
 
-const APP_CONFIG_DIR_NAME = "israeli-bank-ynab-transformer";
-const CONFIG_DIR_OVERRIDE_ENV = "ISRAELI_BANK_YNAB_CONFIG_DIR";
+export {
+  getAppConfigDir,
+  getEnvFilePath,
+  getCategoryReportConfigPath,
+  getYnabImportConfigPath,
+  getAccountsConfigPath,
+  getHistoryDir,
+  ensureAppConfigDirExists,
+} from "./paths.js";
 
 export interface LoadAppEnvOptions {
   override?: boolean;
-}
-
-export function getAppConfigDir(): string {
-  const override = process.env[CONFIG_DIR_OVERRIDE_ENV]?.trim();
-  if (override) {
-    return resolve(override);
-  }
-  return join(homedir(), ".config", APP_CONFIG_DIR_NAME);
-}
-
-export function getEnvFilePath(): string {
-  return join(getAppConfigDir(), ".env");
-}
-
-export function getCategoryReportConfigPath(): string {
-  return join(getAppConfigDir(), "category-report.json");
-}
-
-export function getYnabImportConfigPath(): string {
-  return join(getAppConfigDir(), "ynab-import.json");
-}
-
-export function getHistoryDir(): string {
-  return join(getAppConfigDir(), "history");
-}
-
-export function ensureAppConfigDirExists(): string {
-  const dir = getAppConfigDir();
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  return dir;
 }
 
 export function loadAppEnv(options: LoadAppEnvOptions = {}): string {
