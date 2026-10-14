@@ -479,6 +479,9 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
 
   const updateGroup = (i: number, patch: Partial<CreditLimitGroup>) =>
     setGroups((g) => g.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  /** Default name for a limit group: its cards' names, e.g. "Leumi Cards + Max Card". */
+  const groupName = (g: CreditLimitGroup) =>
+    g.accountIds.map((id) => cards.find((c) => c.id === id)?.name).filter(Boolean).join(" + ");
   const toggleCard = (i: number, id: string) => {
     // A card belongs to one group: ticking it here removes it from the others.
     setGroups((g) =>
@@ -499,7 +502,7 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
         baselineMonths: Number(months) || 6,
         subtractExpected: subtract,
         overdraft: overdraft.limitAccountId && overdraft.accountId ? overdraft : null,
-        creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || "Cards" })),
+        creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || groupName(g) })),
         flexibleCategoryIds: [...flexible],
       });
       setMessage("Saved.");
@@ -583,25 +586,35 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
           <p className="font-medium">Card limits</p>
           <p className="text-xs text-muted-foreground">Put cards that share one limit in the same group. Cards in no group show "not set".</p>
           {groups.map((g, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
-              <Input value={g.name} onChange={(e) => updateGroup(i, { name: e.target.value })} className="h-8 w-40" aria-label="Group name" />
-              <span className="text-muted-foreground">₪</span>
-              <Input
-                value={String(Math.round(g.limit / K))}
-                onChange={(e) => updateGroup(i, { limit: (Number(e.target.value.replace(/\D/g, "")) || 0) * K })}
-                inputMode="numeric"
-                className="h-8 w-28 text-right"
-                aria-label="Limit"
-              />
-              {cards.map((c) => (
-                <label key={c.id} className="flex items-center gap-1">
-                  <input type="checkbox" checked={g.accountIds.includes(c.id)} onChange={() => toggleCard(i, c.id)} />
-                  {c.name}
+            <div key={i} className="space-y-2 rounded-md border p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="space-y-1">
+                  <span className="block text-xs text-muted-foreground">Credit limit (₪)</span>
+                  <Input
+                    value={g.limit ? String(Math.round(g.limit / K)) : ""}
+                    onChange={(e) => updateGroup(i, { limit: (Number(e.target.value.replace(/\D/g, "")) || 0) * K })}
+                    inputMode="numeric"
+                    placeholder="20000"
+                    className="h-8 w-32 text-right"
+                  />
                 </label>
-              ))}
-              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setGroups((x) => x.filter((_, j) => j !== i))} title="Remove group">
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+                <label className="space-y-1">
+                  <span className="block text-xs text-muted-foreground">Name (optional)</span>
+                  <Input value={g.name} onChange={(e) => updateGroup(i, { name: e.target.value })} placeholder={groupName(g) || "Leumi + Max"} className="h-8 w-48" />
+                </label>
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setGroups((x) => x.filter((_, j) => j !== i))} title="Remove this limit">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="text-xs text-muted-foreground">Cards that share this limit:</span>
+                {cards.map((c) => (
+                  <label key={c.id} className="flex items-center gap-1">
+                    <input type="checkbox" checked={g.accountIds.includes(c.id)} onChange={() => toggleCard(i, c.id)} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
             </div>
           ))}
           <Button size="sm" variant="outline" onClick={() => setGroups((g) => [...g, { name: "", limit: 0, accountIds: [] }])}>
