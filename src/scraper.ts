@@ -1,5 +1,6 @@
 import { createScraper, type ScraperOptions } from "israeli-bank-scrapers";
 import type { AccountConfig } from "./config.js";
+import { startScraperTrace } from "./scraper-trace.js";
 import type { EnrichedTransaction } from "./transformer.js";
 
 export interface ScrapeResult {
@@ -13,9 +14,24 @@ const TIMEOUT_ERROR_TYPE = "TIMEOUT";
 const TIMEOUT_RETRY_DELAY_MS = 3000;
 
 /**
- * Scrape a single account
+ * Scrape a single account. For banks with a trace (Leumi), the scraper's step-by-step debug lines
+ * are saved to a trace file (see scraper-trace.ts).
  */
 export async function scrapeAccount(
+  account: AccountConfig,
+  startDate: Date,
+  showBrowser: boolean,
+  onProgress?: (message: string, accountName?: string) => void
+): Promise<ScrapeResult> {
+  const stopTrace = startScraperTrace(account.companyId);
+  try {
+    return await scrapeAccountWithRetry(account, startDate, showBrowser, onProgress);
+  } finally {
+    stopTrace();
+  }
+}
+
+async function scrapeAccountWithRetry(
   account: AccountConfig,
   startDate: Date,
   showBrowser: boolean,
