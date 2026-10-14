@@ -1,105 +1,73 @@
 import { CompanyTypes } from "israeli-bank-scrapers";
 
 /**
- * Bank definition with credential field mappings.
+ * Bank definition (catalog entry).
  * To add a new bank:
- * 1. Add entry here with companyId and credential fields
+ * 1. Add an entry here with companyId and credential field names
  * 2. Add corresponding env vars to .env.example
+ *
+ * Credential storage keys are derived from `name` + field (see account-instances.ts),
+ * so this catalog stays free of storage details.
  */
 export interface BankDefinition {
   name: string;
   companyId: CompanyTypes;
-  /** Maps credential field name to environment variable name */
-  credentialFields: Record<string, string>;
+  /** Credential field names, in form order. */
+  fields: string[];
 }
 
 /**
- * All supported banks and their credential mappings.
- * Add new banks here - no other code changes needed.
+ * All supported banks. Add new banks here - no other code changes needed.
  */
 export const BANK_DEFINITIONS: BankDefinition[] = [
   {
     name: "Leumi",
     companyId: CompanyTypes.leumi,
-    credentialFields: {
-      username: "LEUMI_USERNAME",
-      password: "LEUMI_PASSWORD",
-    },
+    fields: ["username", "password"],
   },
   {
     name: "Hapoalim",
     companyId: CompanyTypes.hapoalim,
-    credentialFields: {
-      userCode: "HAPOALIM_USERCODE",
-      password: "HAPOALIM_PASSWORD",
-    },
+    fields: ["userCode", "password"],
   },
   {
     name: "Discount",
     companyId: CompanyTypes.discount,
-    credentialFields: {
-      id: "DISCOUNT_ID",
-      password: "DISCOUNT_PASSWORD",
-      num: "DISCOUNT_NUM",
-    },
+    fields: ["id", "password", "num"],
   },
   {
     name: "Mizrahi",
     companyId: CompanyTypes.mizrahi,
-    credentialFields: {
-      username: "MIZRAHI_USERNAME",
-      password: "MIZRAHI_PASSWORD",
-    },
+    fields: ["username", "password"],
   },
   {
     name: "Max",
     companyId: CompanyTypes.max,
-    credentialFields: {
-      username: "MAX_USERNAME",
-      password: "MAX_PASSWORD",
-    },
+    fields: ["username", "password"],
   },
   {
     name: "Visa Cal",
     companyId: CompanyTypes.visaCal,
-    credentialFields: {
-      username: "VISACAL_USERNAME",
-      password: "VISACAL_PASSWORD",
-    },
+    fields: ["username", "password"],
   },
   {
     name: "Isracard",
     companyId: CompanyTypes.isracard,
-    credentialFields: {
-      id: "ISRACARD_ID",
-      card6Digits: "ISRACARD_CARD6DIGITS",
-      password: "ISRACARD_PASSWORD",
-    },
+    fields: ["id", "card6Digits", "password"],
   },
   {
     name: "Amex",
     companyId: CompanyTypes.amex,
-    credentialFields: {
-      id: "AMEX_ID",
-      card6Digits: "AMEX_CARD6DIGITS",
-      password: "AMEX_PASSWORD",
-    },
+    fields: ["id", "card6Digits", "password"],
   },
   {
     name: "Otsar Hahayal",
     companyId: CompanyTypes.otsarHahayal,
-    credentialFields: {
-      username: "OTSARHAHAYAL_USERNAME",
-      password: "OTSARHAHAYAL_PASSWORD",
-    },
+    fields: ["username", "password"],
   },
   {
     name: "Mercantile",
     companyId: CompanyTypes.mercantile,
-    credentialFields: {
-      id: "MERCANTILE_ID",
-      password: "MERCANTILE_PASSWORD",
-      num: "MERCANTILE_NUM",
-    },
+    fields: ["id", "password", "num"],
   },
 ];

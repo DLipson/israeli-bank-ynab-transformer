@@ -1,9 +1,11 @@
-﻿import { CompanyTypes } from "israeli-bank-scrapers";
-import { BANK_DEFINITIONS } from "./banks.js";
+﻿import type { CompanyTypes } from "israeli-bank-scrapers";
+import { findBank, instanceFieldKey, listInstances } from "./account-instances.js";
 import { getEnvFilePath } from "./env.js";
 
 export interface AccountConfig {
+  /** Stable identity and display label (the instance's accountName). */
   name: string;
+  bankName: string;
   companyId: CompanyTypes;
   credentials: Record<string, string>;
   enabled: boolean;
@@ -58,22 +60,30 @@ export function calculateStartDate(daysBack: number): Date {
 }
 
 /**
- * Load configuration from environment variables
+ * Load configuration from environment variables and configured instances.
  */
 export function loadConfig(options: LoadConfigOptions = {}): Config {
   const daysBack = validateDaysBack(options.daysBack);
   const startDate = calculateStartDate(daysBack);
-  const accounts: AccountConfig[] = BANK_DEFINITIONS.map((bank) => {
+
+  const accounts: AccountConfig[] = listInstances().map((instance) => {
+    const bank = findBank(instance.bankName);
+    if (!bank) {
+      throw new Error(`Unknown bank "${instance.bankName}" for account "${instance.accountName}".`);
+    }
     const credentials = Object.fromEntries(
-      Object.entries(bank.credentialFields).map(([field, envVar]) => [field, getEnv(envVar)])
+      bank.fields.map((field) => [field, getEnv(instanceFieldKey(instance, field))])
     ) as Record<string, string>;
+
     return {
-      name: bank.name,
+      name: instance.accountName,
+      bankName: instance.bankName,
       companyId: bank.companyId,
       credentials,
       enabled: Object.values(credentials).every(Boolean),
     };
   });
+
   const warnings: string[] = [];
 
   if (daysBack > 365) {
@@ -95,7 +105,3 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     warnings,
   };
 }
-
-
-
-

@@ -154,6 +154,7 @@ describe("scrapeAccount", () => {
 function makeAccount(): AccountConfig {
   return {
     name: "Leumi",
+    bankName: "Leumi",
     companyId: "leumi" as AccountConfig["companyId"],
     credentials: { userCode: "user", password: "password" },
     enabled: true,
@@ -172,6 +173,7 @@ describe("scrapeAllAccounts concurrency", () => {
 
     type AccountConfig = {
       name: string;
+      bankName: string;
       companyId: any;
       credentials: Record<string, string>;
       enabled: boolean;
@@ -184,9 +186,9 @@ describe("scrapeAllAccounts concurrency", () => {
     };
 
     const accounts: AccountConfig[] = [
-      { name: "A", companyId: 1 as any, credentials: {}, enabled: true },
-      { name: "B", companyId: 2 as any, credentials: {}, enabled: true },
-      { name: "C", companyId: 3 as any, credentials: {}, enabled: true },
+      { name: "A", bankName: "A", companyId: 1 as any, credentials: {}, enabled: true },
+      { name: "B", bankName: "B", companyId: 2 as any, credentials: {}, enabled: true },
+      { name: "C", bankName: "C", companyId: 3 as any, credentials: {}, enabled: true },
     ];
 
     let active = 0;

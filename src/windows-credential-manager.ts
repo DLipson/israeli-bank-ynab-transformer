@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BANK_DEFINITIONS } from "./banks.js";
+import { findBank, instanceCredentialKeys, listInstances } from "./account-instances.js";
 
 const SERVICE_NAME = "israeli-bank-ynab-transformer";
 const SCRIPT_PATH = resolve(
@@ -25,8 +25,12 @@ export const SERPER_KEY_ENV_VAR = "SERPER_API_KEY";
 export function getBankCredentialEnvVars(): string[] {
   // ponytail: the YNAB token and Serper key are not bank credentials, but use the same secure storage.
   const keys = new Set<string>([YNAB_TOKEN_ENV_VAR, SERPER_KEY_ENV_VAR]);
-  for (const bank of BANK_DEFINITIONS) {
-    for (const envVar of Object.values(bank.credentialFields)) {
+  for (const instance of listInstances()) {
+    const bank = findBank(instance.bankName);
+    if (!bank) {
+      continue;
+    }
+    for (const envVar of instanceCredentialKeys(instance, bank)) {
       keys.add(envVar);
     }
   }
