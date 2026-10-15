@@ -51,6 +51,11 @@ function median(values: number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
+function monthOffset(month: string, offset: number): string {
+  const [year, value] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, value - 1 + offset, 1)).toISOString().slice(0, 7);
+}
+
 /** Outflows a person chooses: not transfers, cash withdrawals, installments, or splits. */
 function isChoiceSpending(t: YnabTransaction): boolean {
   if (t.deleted || t.amount >= 0 || t.transfer_account_id || t.subtransactions?.length) return false;
@@ -172,7 +177,7 @@ export function detectAnomalies(
 }
 
 /**
- * Price increase: a payment that repeats monthly (3 of the last 4 months, steady amount before)
+ * Price increase: a payment with a steady amount in 3 consecutive prior calendar months
  * whose newest charge is 10% and ₪10 above its usual amount.
  */
 function priceIncreases(history: Map<string, YnabTransaction[]>, since: string, asOf: string): Anomaly[] {
@@ -182,10 +187,11 @@ function priceIncreases(history: Map<string, YnabTransaction[]>, since: string, 
     if (!latest || latest.date < since) continue;
     const months = new Map<string, number>();
     for (const t of list) if (t.date < latest.date.slice(0, 7)) months.set(t.date.slice(0, 7), -t.amount);
-    const recent = [...months.entries()].sort().slice(-4).map(([, v]) => v);
-    if (recent.length < 3) continue;
-    const usual = median(recent);
-    const steady = Math.max(...recent) <= Math.min(...recent) * PRICE_FACTOR;
+    const recent = [-3, -2, -1].map((offset) => months.get(monthOffset(latest.date.slice(0, 7), offset)));
+    if (recent.some((value) => value === undefined)) continue;
+    const amounts = recent as number[];
+    const usual = median(amounts);
+    const steady = Math.max(...amounts) <= Math.min(...amounts) * PRICE_FACTOR;
     const amount = -latest.amount;
     if (steady && amount >= usual * PRICE_FACTOR && amount - usual >= PRICE_MIN) {
       found.push({

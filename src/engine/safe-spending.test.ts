@@ -198,6 +198,12 @@ describe("suggestScheduled", () => {
     expect(suggestScheduled(snapshot({ transactions: history({ payee_name: "Course", memo: JSON.stringify({ installment: "2/10" }) }) }))).toEqual([]);
   });
 
+  it("does not let a non-monthly schedule hide a monthly payment suggestion", () => {
+    const transactions = history({ payee_name: "Rent", amount: -5500 * K });
+    const schedule = scheduled({ frequency: "yearly", amount: -5500 * K });
+    expect(suggestScheduled(snapshot({ transactions, scheduled: [schedule] }))).toHaveLength(1);
+  });
+
   it("flags amounts that vary, because YNAB matches imports only on the exact amount", () => {
     const transactions = [-80, -83, -85, -83].map((a, i) => txn({ payee_name: "Phone", amount: a * K, date: `2026-0${6 + i}-07` }));
     expect(suggestScheduled(snapshot({ transactions }))[0]).toMatchObject({ amount: 83 * K, amountVaries: true });
