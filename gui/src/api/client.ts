@@ -452,6 +452,15 @@ export interface AccountReconcile {
   matched: number;
   missingInYnab: Array<{ date: string; amount: number; payee: string }>;
   missingInBank: Array<{ id: string; date: string; amount: number; payee_name: string | null }>;
+  balance: {
+    reconciledDate: string | null;
+    reconciledBalance: number;
+    scrapeTotal: number;
+    scrapeRows: number;
+    expected: number | null;
+    ynabBalance: number;
+    note?: string;
+  };
 }
 
 export async function getReconcile(): Promise<AccountReconcile[]> {

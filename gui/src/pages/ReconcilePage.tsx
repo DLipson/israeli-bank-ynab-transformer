@@ -22,6 +22,19 @@ function Line({ side, date, amount, payee }: { side: string; date: string; amoun
   );
 }
 
+/** Balance by the scrape alone: last reconciled balance + scraped rows since then, next to YNAB now. */
+function Balance({ b }: { b: AccountReconcile["balance"] }) {
+  if (b.expected === null) return <p className="mt-1 text-xs text-muted-foreground">Balance by the scrape: — {b.note}</p>;
+  const diff = b.ynabBalance - b.expected;
+  return (
+    <p className="mt-1 text-xs text-muted-foreground">
+      Reconciled {formatDate(b.reconciledDate!)}: {money(b.reconciledBalance)} + scrape since ({b.scrapeRows} rows) {money(b.scrapeTotal)} ={" "}
+      <span className="font-medium text-foreground">{money(b.expected)}</span> by the scrape · YNAB now {money(b.ynabBalance)}
+      {diff !== 0 && <span className="text-amber-700"> · difference {money(diff)}</span>}
+    </p>
+  );
+}
+
 export function ReconcilePage() {
   const [accounts, setAccounts] = useState<AccountReconcile[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -85,6 +98,7 @@ export function ReconcilePage() {
               {a.missingInBank.map((t) => (
                 <Line key={t.id} side="Not in bank" date={t.date} amount={t.amount} payee={t.payee_name ?? ""} />
               ))}
+              <Balance b={a.balance} />
             </div>
           );
         })}
