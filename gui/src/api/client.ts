@@ -363,6 +363,15 @@ export interface ScheduleSuggestion {
 }
 
 export interface SpendingData {
+  monthlyFlow: {
+    month: string;
+    expenses: number;
+    income: number;
+    incomeThisMonth: number;
+    carriedIncome: number;
+    carryoverFrom: string;
+    carryoverTo: string;
+  };
   today: string;
   lastScrapedAt: string | null;
   periodEnd: string;
