@@ -17,7 +17,7 @@ import {
   type YnabTransaction,
 } from "./categorize.js";
 import { summarizeSerper } from "./categorize-service.js";
-import { mergeDelta } from "./transaction-cache.js";
+import { mergeDelta, replaceSinceDate } from "./transaction-cache.js";
 
 const categories: CategoryOption[] = [
   { id: "groc", name: "Groceries", group: "Food" },
@@ -269,5 +269,17 @@ describe("mergeDelta", () => {
       txn({ id: "c" }),
     ]);
     expect(merged.map((t) => [t.id, t.category_id])).toEqual([["a", "groc"], ["c", null]]);
+  });
+});
+
+describe("replaceSinceDate", () => {
+  it("drops cached rows missing from the current snapshot while keeping older history", () => {
+    const older = txn({ id: "older", date: "2026-08-31" });
+    const stale = txn({ id: "stale", date: "2026-09-01" });
+    const current = txn({ id: "current", date: "2026-09-02" });
+    const deleted = txn({ id: "deleted", date: "2026-09-03", deleted: true });
+
+    const merged = replaceSinceDate([older, stale], [current, deleted], "2026-09-01");
+    expect(merged.map((t) => t.id)).toEqual(["older", "current"]);
   });
 });

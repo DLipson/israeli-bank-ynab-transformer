@@ -189,8 +189,8 @@ function MonthlyActuals({ data }: { data: SpendingData }) {
         </div>
         {flow.planActivity !== null && (
           <p className="text-xs text-muted-foreground">
-            YNAB Activity is a net transaction total, excluding Ready to Assign inflows. An
-            uncategorized inflow can lower Activity while counting as income here.
+            YNAB Activity includes category movements such as Credit Card Payments, so it can differ
+            from transaction spending.
           </p>
         )}
         {flow.carriedIncome > 0 && (
