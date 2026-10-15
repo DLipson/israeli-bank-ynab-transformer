@@ -1,11 +1,14 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ScrapePage } from "@/pages/ScrapePage";
+import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
+import { createScrapeStream } from "@/api/client";
 
 vi.mock("@/api/client", async () => {
   const actual = await vi.importActual<typeof import("@/api/client")>("@/api/client");
   return {
     ...actual,
+    createScrapeStream: vi.fn(),
     getAccounts: vi.fn().mockResolvedValue([
       { name: "Account A", bankName: "Leumi", companyId: "leumi", fields: [], enabled: true, primary: true },
       { name: "Account B", bankName: "Hapoalim", companyId: "hapoalim", fields: [], enabled: false, primary: true },
@@ -14,6 +17,14 @@ vi.mock("@/api/client", async () => {
 });
 
 const SETTINGS_KEY = "scrape.settings.v1";
+
+function renderPage() {
+  return render(
+    <ScrapeRunProvider>
+      <ScrapePage />
+    </ScrapeRunProvider>
+  );
+}
 
 describe("ScrapePage settings persistence", () => {
   beforeEach(() => {
@@ -34,7 +45,7 @@ describe("ScrapePage settings persistence", () => {
       })
     );
 
-      render(<ScrapePage />);
+    renderPage();
 
     expect((screen.getByLabelText("Days Back") as HTMLInputElement).value).toBe("15");
     expect((screen.getByLabelText("Output Directory") as HTMLInputElement).value).toMatch(
@@ -55,7 +66,7 @@ describe("ScrapePage settings persistence", () => {
   });
 
   it("persists changes back to localStorage", async () => {
-      render(<ScrapePage />);
+    renderPage();
 
     fireEvent.change(screen.getByLabelText("Days Back"), {
       target: { value: "21" },
@@ -73,13 +84,13 @@ describe("ScrapePage settings persistence", () => {
       JSON.stringify("2026-04-08T12:00:00.000Z")
     );
 
-      render(<ScrapePage />);
+    renderPage();
 
     expect(await screen.findByText("Last scraped: 2026-04-08")).toBeInTheDocument();
   });
 
   it("defaults outputDir to ./output/ with a timestamp when no localStorage is set", async () => {
-      render(<ScrapePage />);
+    renderPage();
 
     const outputDirInput = (await screen.findByLabelText("Output Directory")) as HTMLInputElement;
     expect(outputDirInput.value).toMatch(/^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
@@ -97,7 +108,7 @@ describe("ScrapePage settings persistence", () => {
       })
     );
 
-      render(<ScrapePage />);
+    renderPage();
 
     const fixedButton = screen.getByTestId("sc-again-fixed");
     expect(fixedButton).toBeInTheDocument();
@@ -121,7 +132,7 @@ describe("ScrapePage settings persistence", () => {
         })
       );
 
-      render(<ScrapePage />);
+      renderPage();
 
       fireEvent.click(screen.getByTestId("sc-again-fixed").querySelector("button")!);
 
@@ -131,5 +142,43 @@ describe("ScrapePage settings persistence", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+function Harness({ show }: { show: boolean }) {
+  return (
+    <ScrapeRunProvider>
+      {show ? <ScrapePage /> : null}
+    </ScrapeRunProvider>
+  );
+}
+
+describe("Scrape run survives leaving the view", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("keeps the run alive and does not close the stream when the page unmounts", async () => {
+    const fakeStream = { close: vi.fn() };
+    vi.mocked(createScrapeStream).mockReturnValue(fakeStream as unknown as EventSource);
+
+    const { rerender } = render(<Harness show />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /start scrap/i })).not.toBeDisabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: /start scrap/i }));
+
+    expect(await screen.findByText("Account A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel scrap/i })).toBeInTheDocument();
+
+    rerender(<Harness show={false} />);
+
+    expect(fakeStream.close).not.toHaveBeenCalled();
+
+    rerender(<Harness show />);
+
+    expect(screen.getByRole("button", { name: /cancel scrap/i })).toBeInTheDocument();
+    expect(screen.getByText("Account A")).toBeInTheDocument();
   });
 });

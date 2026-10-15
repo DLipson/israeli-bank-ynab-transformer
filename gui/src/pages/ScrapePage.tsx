@@ -1,29 +1,26 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrapeSettings } from "@/components/ScrapeSettings";
-import { ScrapeProgress, type AccountStatus } from "@/components/ScrapeProgress";
-import { ScrapeLogs, type LogEntry } from "@/components/ScrapeLogs";
+import { ScrapeProgress } from "@/components/ScrapeProgress";
+import { ScrapeLogs } from "@/components/ScrapeLogs";
 import { ScrapeSummary } from "@/components/ScrapeSummary";
 import { TransactionTable } from "@/components/TransactionTable";
 import { SkippedList } from "@/components/SkippedList";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { exportCSV, openPath, getAccounts, type AccountInfo } from "@/api/client";
 import {
-  createScrapeStream,
-  exportCSV,
-  openPath,
-  getAccounts,
-  cancelScrape,
-  importToYnab,
-  type ScrapePayload,
-  type YnabImportResult,
-  type YnabRow,
-  type SSEEvent,
-  type AccountInfo,
-} from "@/api/client";
+  useScrapeRun,
+  STORAGE_KEYS,
+  readStoredJson,
+  writeStoredJson,
+  removeStored,
+  calculateDaysBack,
+  parseDate,
+  type ExportResult,
+  type CopyStatus,
+} from "@/lib/scrape-run";
 
-type Phase = "settings" | "progress" | "results";
-type ExportResult = { csvPaths: string[]; auditLogPath: string };
 type StoredSettings = {
   daysBack: number;
   outputDir: string;
@@ -35,27 +32,6 @@ type StoredSettings = {
   concurrency: number;
   selectedAccounts: string[];
 };
-
-const STORAGE_KEYS = {
-  settings: "scrape.settings.v1",
-  payload: "scrape.payload.v1",
-  exportResult: "scrape.exportResult.v1",
-  lastScrapeAt: "scrape.lastRun.v1",
-};
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function startOfDay(date: Date): Date {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function parseDate(value: string | null): Date | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
 
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
@@ -74,64 +50,27 @@ function formatTimestamp(date: Date = new Date()): string {
   return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
 
-function extractLastScrapeAt(payload: ScrapePayload | null): string | null {
-  if (!payload) return null;
-  const auditLog = payload.auditLog as { timestamp?: string } | undefined;
-  if (!auditLog?.timestamp) return null;
-  return auditLog.timestamp;
-}
-
-function calculateDaysBack(lastScrapeAt: string | null): number | null {
-  const lastScrapeDate = parseDate(lastScrapeAt);
-  if (!lastScrapeDate) return null;
-  const target = startOfDay(lastScrapeDate);
-  target.setDate(target.getDate() - 1);
-  const today = startOfDay(new Date());
-  const diffDays = Math.round((today.getTime() - target.getTime()) / MS_PER_DAY);
-  return Math.max(1, diffDays);
-}
-
-function readStoredJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredJson<T>(key: string, value: T): void {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function removeStored(key: string): void {
-  window.localStorage.removeItem(key);
-}
-
 export function ScrapePage() {
-  const initialRef = useRef<{
-    settings: Partial<StoredSettings>;
-    payload: ScrapePayload | null;
-    exportResult: ExportResult | null;
-    lastScrapeAt: string | null;
-  } | null>(null);
-  if (!initialRef.current) {
-    const storedPayload = readStoredJson<ScrapePayload | null>(STORAGE_KEYS.payload, null);
-    const storedLastScrapeAt = readStoredJson<string | null>(STORAGE_KEYS.lastScrapeAt, null);
-    initialRef.current = {
-      settings: readStoredJson<Partial<StoredSettings>>(STORAGE_KEYS.settings, {}),
-      payload: storedPayload,
-      exportResult: readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null),
-      lastScrapeAt: storedLastScrapeAt ?? extractLastScrapeAt(storedPayload),
-    };
-  }
-  const initialSettings = initialRef.current.settings;
+  const {
+    phase,
+    accountStatuses,
+    entries,
+    payload,
+    lastScrapeAt,
+    error,
+    ynabResult,
+    ynabImporting,
+    start,
+    cancel,
+    reset,
+    setError,
+    importRows,
+  } = useScrapeRun();
 
-  const [phase, setPhase] = useState<Phase>(() =>
-    initialRef.current?.payload ? "results" : "settings"
+  const [initialSettings] = useState(() =>
+    readStoredJson<Partial<StoredSettings>>(STORAGE_KEYS.settings, {})
   );
 
-  // Settings state
   const [daysBack, setDaysBack] = useState(() => initialSettings.daysBack ?? 60);
   const [outputDir, setOutputDir] = useState(() => `./output/${formatTimestamp()}`);
   const [split, setSplit] = useState(() => initialSettings.split ?? false);
@@ -151,30 +90,15 @@ export function ScrapePage() {
     () => initialSettings.selectedAccounts ?? []
   );
 
-  // Progress state
-  const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
-  const [entries, setEntries] = useState<LogEntry[]>([]);
-
-  // Results state
-  const [payload, setPayload] = useState<ScrapePayload | null>(
-    () => initialRef.current?.payload ?? null
+  const [exportResult, setExportResult] = useState<ExportResult | null>(() =>
+    readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null)
   );
   const [exporting, setExporting] = useState(false);
   const [openingOutput, setOpeningOutput] = useState(false);
-  const [ynabImporting, setYnabImporting] = useState(false);
-  const [ynabResult, setYnabResult] = useState<YnabImportResult | null>(null);
-  const [exportResult, setExportResult] = useState<ExportResult | null>(
-    () => initialRef.current?.exportResult ?? null
-  );
-  const [lastScrapeAt, setLastScrapeAt] = useState<string | null>(
-    () => initialRef.current?.lastScrapeAt ?? null
-  );
-  const lastScrapeDate = parseDate(lastScrapeAt);
-  const [error, setError] = useState("");
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [logsCollapsed, setLogsCollapsed] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
-  const streamRef = useRef<EventSource | null>(null);
-  const scrapeIdRef = useRef<string | null>(null);
+
+  const lastScrapeDate = parseDate(lastScrapeAt);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -190,16 +114,6 @@ export function ScrapePage() {
     };
 
     fetchAccounts();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.close();
-        streamRef.current = null;
-      }
-      scrapeIdRef.current = null;
-    };
   }, []);
 
   useEffect(() => {
@@ -227,28 +141,12 @@ export function ScrapePage() {
   ]);
 
   useEffect(() => {
-    if (payload) {
-      writeStoredJson(STORAGE_KEYS.payload, payload);
-    } else {
-      removeStored(STORAGE_KEYS.payload);
-    }
-  }, [payload]);
-
-  useEffect(() => {
     if (exportResult) {
       writeStoredJson(STORAGE_KEYS.exportResult, exportResult);
     } else {
       removeStored(STORAGE_KEYS.exportResult);
     }
   }, [exportResult]);
-
-  useEffect(() => {
-    if (lastScrapeAt) {
-      writeStoredJson(STORAGE_KEYS.lastScrapeAt, lastScrapeAt);
-    } else {
-      removeStored(STORAGE_KEYS.lastScrapeAt);
-    }
-  }, [lastScrapeAt]);
 
   const selectionInitializedRef = useRef(false);
 
@@ -267,128 +165,17 @@ export function ScrapePage() {
     }
   }, [accounts, accountsError, accountsLoading, selectedAccounts]);
 
-  const handleYnabImport = useCallback(async (rows: YnabRow[], runId?: string) => {
-    setYnabImporting(true);
-    setError("");
-    try {
-      setYnabResult(await importToYnab(rows, runId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "YNAB import failed");
-    } finally {
-      setYnabImporting(false);
-    }
-  }, []);
-
-  const handleStart = useCallback(() => {
-    if (selectedAccounts.length === 0) {
-      setError("Select at least one account to scrape.");
-      setPhase("results");
-      return;
-    }
-
-    setPhase("progress");
-    setAccountStatuses(
-      selectedAccounts.map((name) => ({
-        name,
-        status: "pending" as const,
-      }))
-    );
-    setEntries([]);
-    setPayload(null);
-    setExportResult(null);
-    setYnabResult(null);
-    setError("");
-    setLogsCollapsed(false);
-    setCopyStatus("idle");
-
-    const scrapeId = crypto.randomUUID();
-    scrapeIdRef.current = scrapeId;
-
-    const stream = createScrapeStream(
+  const handleStart = () => {
+    start({
       daysBack,
       showBrowser,
       enableDetailedLogging,
       detailedLoggingLimit,
       concurrency,
       selectedAccounts,
-      scrapeId,
-      (event: SSEEvent) => {
-        switch (event.type) {
-          case "warning":
-            setEntries((prev) => [...prev, { text: `Warning: ${event.message}` }]);
-            break;
-
-          case "progress":
-            setEntries((prev) => [...prev, { text: event.message ?? "", account: event.account }]);
-            // Try to detect which account is being worked on
-            if (event.message) {
-              const scrapeMatch = event.message.match(/^Scraping (.+)\.\.\.$/);
-              if (scrapeMatch) {
-                const name = scrapeMatch[1].replace(/^\n/, "");
-                setAccountStatuses((prev) => {
-                  const exists = prev.find((a) => a.name === name);
-                  if (exists) {
-                    return prev.map((a) =>
-                      a.name === name
-                        ? { ...a, status: "scraping" as const }
-                        : a
-                    );
-                  }
-                  return [...prev, { name, status: "scraping" as const }];
-                });
-              }
-            }
-            break;
-
-          case "account-done":
-            setAccountStatuses((prev) => {
-              const name = event.accountName ?? "";
-              const exists = prev.find((a) => a.name === name);
-              const entry: AccountStatus = {
-                name,
-                status: event.success ? "done" : "failed",
-                transactionCount: event.transactionCount,
-                error: event.error,
-              };
-              if (exists) {
-                return prev.map((a) => (a.name === name ? entry : a));
-              }
-              return [...prev, entry];
-            });
-            break;
-
-          case "done":
-            if (event.payload) {
-              setPayload(event.payload);
-              const nextLastScrapeAt = extractLastScrapeAt(event.payload);
-              if (nextLastScrapeAt) {
-                setLastScrapeAt(nextLastScrapeAt);
-              }
-              if (autoYnabImport) {
-                void handleYnabImport(event.payload.rows, event.payload.runId);
-              }
-            }
-            setPhase("results");
-            break;
-
-          case "error":
-            setError(event.message ?? "Unknown error");
-            setPhase("results");
-            break;
-        }
-      }
-    );
-    streamRef.current = stream;
-  }, [
-    daysBack,
-    showBrowser,
-    autoYnabImport,
-    handleYnabImport,
-    enableDetailedLogging,
-    detailedLoggingLimit,
-    concurrency,
-    selectedAccounts,
-  ]);
+      autoYnabImport,
+    });
+  };
 
   const handleExport = async () => {
     if (!payload) return;
@@ -415,41 +202,20 @@ export function ScrapePage() {
     if (nextDaysBack) {
       setDaysBack(nextDaysBack);
     }
-    setPhase("settings");
-    setPayload(null);
     setExportResult(null);
-    setYnabResult(null);
-    setError("");
     setCopyStatus("idle");
+    reset();
   };
 
   const handleBack = () => {
-    setPhase("settings");
-    setError("");
-  };
-
-  const handleCancel = async () => {
-    if (streamRef.current) {
-      streamRef.current.close();
-      streamRef.current = null;
-    }
-    if (scrapeIdRef.current) {
-      try {
-        await cancelScrape(scrapeIdRef.current);
-      } catch {
-        // ignore cancel errors
-      }
-    }
-    scrapeIdRef.current = null;
-    setError("Scrape canceled.");
-    setPhase("results");
+    reset();
   };
 
   const handleCopyLogs = async () => {
     if (entries.length === 0) return;
     const text = entries.map((e) => e.text).join("\n");
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(text);
       setCopyStatus("copied");
     } catch {
       setCopyStatus("failed");
@@ -472,7 +238,6 @@ export function ScrapePage() {
   };
 
   return (
-    <>
     <div className="space-y-4">
       {phase === "settings" && (
         <Card>
@@ -521,7 +286,7 @@ export function ScrapePage() {
           <CardContent>
             <ScrapeProgress accounts={accountStatuses} entries={entries} />
             <div className="mt-4">
-              <Button variant="outline" onClick={handleCancel}>
+              <Button variant="outline" onClick={() => void cancel()}>
                 Cancel Scrape
               </Button>
             </div>
@@ -611,7 +376,7 @@ export function ScrapePage() {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => handleYnabImport(payload.rows, payload.runId)}
+                  onClick={() => void importRows(payload.rows, payload.runId)}
                   disabled={ynabImporting}
                 >
                   {ynabImporting ? "Sending..." : "Send to YNAB"}
@@ -660,6 +425,5 @@ export function ScrapePage() {
         </div>
       )}
     </div>
-    </>
   );
 }

@@ -8,6 +8,7 @@ import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
 import { AnomaliesPanel, ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
+import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
 import { useSpending } from "@/lib/spending";
 
 /** A second row of tabs inside a top tab (e.g. Review: Categorize | Schedules). */
@@ -121,7 +122,9 @@ function Shell() {
 export default function App() {
   return (
     <SpendingProvider>
-      <Shell />
+      <ScrapeRunProvider>
+        <Shell />
+      </ScrapeRunProvider>
     </SpendingProvider>
   );
 }
