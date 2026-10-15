@@ -240,6 +240,7 @@ export interface CategorySuggestion {
   note: string;
   source?: string;
   share?: number;
+  sampleSize?: number;
 }
 
 export interface CategoryOption {
