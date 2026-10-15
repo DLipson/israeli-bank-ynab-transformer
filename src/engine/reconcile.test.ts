@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
-import { reconcile, type ScrapeRun } from "./reconcile.js";
+import { balanceSinceReconcile, reconcile, type ScrapeRun } from "./reconcile.js";
 
 const SRC = "Max - 1234";
 const row = (date: string, outflow: string, payee = "Shop") => ({
@@ -56,5 +56,30 @@ describe("reconcile", () => {
     expect(r.missingInYnab).toEqual([]);
     expect(r.missingInBank).toEqual([]);
     expect(reconcile(runs, ynab, {})).toEqual([]);
+  });
+});
+
+describe("balanceSinceReconcile", () => {
+  const ynab = [
+    txn("2026-07-01", 100, { cleared: "reconciled" }),
+    txn("2026-07-02", -1000, { cleared: "reconciled" }),
+    txn("2026-07-05", 50, { cleared: "cleared" }),
+  ];
+  const b = (date: string, shekels: number) => ({ date, amount: shekels * 1000, payee: "x" });
+  const rows = [b("2026-07-02", 1000), b("2026-07-05", -50), b("2026-07-10", -30)];
+
+  it("adds scraped rows since the last reconcile, without the rows already reconciled", () => {
+    const r = balanceSinceReconcile({ from: "2026-06-30", to: "2026-07-14", rows }, ynab);
+    expect(r).toMatchObject({ reconciledDate: "2026-07-02", reconciledBalance: 900000, scrapeTotal: -80000, scrapeRows: 2 });
+    expect(r.expected).toBe(820000);
+    expect(r.ynabBalance).toBe(850000);
+  });
+
+  it("gives no number when the scrapes start after the reconcile or miss card payments", () => {
+    const late = balanceSinceReconcile({ from: "2026-07-04", to: "2026-07-14", rows }, ynab);
+    expect(late.expected).toBeNull();
+    expect(late.note).toContain("15 days back");
+    const card = [...ynab, txn("2026-07-08", -500, { transfer_account_id: "bank", import_id: null })];
+    expect(balanceSinceReconcile({ from: "2026-06-30", to: "2026-07-14", rows }, card).expected).toBeNull();
   });
 });

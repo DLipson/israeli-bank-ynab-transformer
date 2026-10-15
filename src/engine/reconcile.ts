@@ -36,6 +36,25 @@ export interface AccountReconcile {
   missingInYnab: BankRow[];
   /** In YNAB, not in the bank. */
   missingInBank: YnabTransaction[];
+  balance: BalanceCheck;
+}
+
+/**
+ * The balance by the scrape alone: the YNAB balance at the last reconcile, plus every scraped row
+ * since then that is not already in a reconciled transaction. `expected` is null when the scrapes
+ * cannot give it; `note` says why.
+ */
+export interface BalanceCheck {
+  /** Date of the newest reconciled transaction; null if the account was never reconciled. */
+  reconciledDate: string | null;
+  reconciledBalance: number;
+  /** Sum of the scraped rows added on top of the reconciled balance. */
+  scrapeTotal: number;
+  scrapeRows: number;
+  expected: number | null;
+  /** All transactions in YNAB, cleared and uncleared. */
+  ynabBalance: number;
+  note?: string;
 }
 
 const shift = (date: string, days: number) => new Date(Date.parse(date) + days * DAY_MS).toISOString().slice(0, 10);
@@ -84,6 +103,44 @@ export function collectBankRows(runs: ScrapeRun[]): Map<string, { from: string; 
 /** The card side of a transfer the user made from the bank: YNAB adds it, the card scrape never has it. */
 const isMirror = (t: YnabTransaction) => !!t.transfer_account_id && !t.import_id;
 
+const sum = (amounts: number[]) => amounts.reduce((s, a) => s + a, 0);
+
+export function balanceSinceReconcile(
+  bank: { from: string; to: string; rows: BankRow[] },
+  inAccount: YnabTransaction[]
+): BalanceCheck {
+  const reconciled = inAccount.filter((t) => t.cleared === "reconciled");
+  const reconciledDate = reconciled.reduce<string | null>((d, t) => (!d || t.date > d ? t.date : d), null);
+  const reconciledBalance = sum(reconciled.map((t) => t.amount));
+  const ynabBalance = sum(inAccount.map((t) => t.amount));
+  const since = reconciledDate ? shift(reconciledDate, -DATE_TOLERANCE) : "";
+
+  // Rows near the reconcile date may already be in it: drop those that match a reconciled transaction.
+  const pool = new Set(reconciled.filter((t) => t.date >= shift(since, -DATE_TOLERANCE)));
+  const added = bank.rows.filter((row) => {
+    if (row.date < since) return false;
+    const match = [...pool].find((t) => t.amount === row.amount && gap(t.date, row.date) <= DATE_TOLERANCE);
+    if (match) pool.delete(match);
+    return !match;
+  });
+  const scrapeTotal = sum(added.map((r) => r.amount));
+  const result = { reconciledDate, reconciledBalance, scrapeTotal, scrapeRows: added.length, ynabBalance };
+
+  if (!reconciledDate) return { ...result, expected: null, note: "Never reconciled in YNAB." };
+  if (bank.from > reconciledDate) {
+    const days = Math.ceil(gap(reconciledDate, bank.to)) + DATE_TOLERANCE;
+    return {
+      ...result,
+      expected: null,
+      note: `The saved scrapes start ${bank.from}, after the last reconcile on ${reconciledDate}. Scrape this account with ${days} days back.`,
+    };
+  }
+  if (inAccount.some((t) => isMirror(t) && t.date > reconciledDate)) {
+    return { ...result, expected: null, note: "Payments to this card come from the bank, so the card scrape does not have them." };
+  }
+  return { ...result, expected: reconciledBalance + scrapeTotal };
+}
+
 export function reconcile(
   runs: ScrapeRun[],
   ynab: YnabTransaction[],
@@ -117,7 +174,8 @@ export function reconcile(
       .filter((t) => t.date >= from && t.date <= to && !isMirror(t))
       .sort((a, b) => a.date.localeCompare(b.date));
     const accountName = inAccount[0]?.account_name ?? accountId;
-    results.push({ source, accountId, accountName, from, to, matched, missingInYnab, missingInBank });
+    const balance = balanceSinceReconcile(bank, inAccount);
+    results.push({ source, accountId, accountName, from, to, matched, missingInYnab, missingInBank, balance });
   }
   return results;
 }
