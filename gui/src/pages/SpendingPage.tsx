@@ -87,6 +87,11 @@ export function NumberDetails({ data, onMode }: { data: SpendingData; onMode: (m
           YNAB's Ready to Assign.
         </p>
       )}
+      <p className="text-xs text-muted-foreground">
+        {mode === "cashflow"
+          ? `This estimate covers ${formatDate(data.today)} through ${formatDate(data.periodEnd)}. The lines below show the account balances and deductions used; negative amounts lower the total.`
+          : `This uses current YNAB category balances as of ${formatDate(data.today)}. The lines below show the spending groups counted; money in Ready to Assign is left out.`}
+      </p>
       <Lines result={main} />
     </div>
   );
@@ -258,7 +263,8 @@ function PaceRow({ p }: { p: Pace }) {
 /** Pace this month vs. a normal month up to the same day (the date of the newest import). */
 export function PaceCard({ data }: { data: SpendingData }) {
   const b = data.baseline;
-  const age = Math.round((Date.parse(data.today) - Date.parse(b.asOf)) / 86400000);
+  const scrapeDate = data.lastScrapedAt?.slice(0, 10);
+  const age = scrapeDate ? Math.max(0, Math.round((Date.parse(data.today) - Date.parse(scrapeDate)) / 86400000)) : null;
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -268,7 +274,8 @@ export function PaceCard({ data }: { data: SpendingData }) {
         <p className="text-xs text-muted-foreground">
           Spent {shekels(b.total.thisMonth)} up to {formatDate(b.asOf)}; a normal month by then is {shekels(b.total.normalByToday)} (middle
           value of the last {b.months} months). A whole normal month is {shekels(b.total.normalMonth)}.
-          {age >= 3 && <span className="text-amber-700"> The newest bank data is {age} days old: run a scrape for a fair pace.</span>}
+          {age === null && <span className="text-amber-700"> No successful bank scrape is recorded.</span>}
+          {age !== null && age >= 3 && <span className="text-amber-700"> The last successful scrape was {age} days ago: run a scrape for a fair pace.</span>}
         </p>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -304,6 +311,26 @@ const REPORT_INFO: Record<ReportType, { name: string; when: string }> = {
   "month-end": { name: "End of month", when: "On the last day" },
 };
 
+function reportActionLabel(type: ReportType): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (type === "weekly") return "Make this week's report";
+  if (type === "month-start") return `Make ${monthLabel(today.slice(0, 7))} start report`;
+
+  const [year, month, day] = today.split("-").map(Number);
+  const thisMonth = today.slice(0, 7);
+  const target =
+    day === new Date(Date.UTC(year, month, 0)).getUTCDate()
+      ? thisMonth
+      : new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 7);
+  return `Make ${monthLabel(target)} report`;
+}
+
+function reportFreshness(report: Report): string {
+  if (report.lastScrapedAt === undefined) return "scrape time not saved";
+  if (!report.lastScrapedAt) return "no successful scrape recorded";
+  return `last successful bank scrape ${new Date(report.lastScrapedAt).toLocaleString("en-IL", { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
 const TONE: Record<string, string> = {
   good: "text-green-700",
   bad: "text-red-700",
@@ -333,37 +360,76 @@ function ReportCard({ type, report, onMade }: { type: ReportType; report: Report
             <CardTitle className="text-base">{report?.title ?? REPORT_INFO[type].name}</CardTitle>
             <p className="text-xs text-muted-foreground">
               {REPORT_INFO[type].when}
-              {report && ` · made ${new Date(report.generatedAt).toLocaleString("en-IL", { dateStyle: "medium", timeStyle: "short" })} · bank data up to ${formatDate(report.dataAsOf)}`}
+              {report && ` · made ${new Date(report.generatedAt).toLocaleString("en-IL", { dateStyle: "medium", timeStyle: "short" })} · transaction data through ${formatDate(report.dataAsOf)} · ${reportFreshness(report)}`}
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={make} disabled={busy}>
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Make now
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {reportActionLabel(type)}
           </Button>
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         {!report && <p className="text-sm text-muted-foreground">Not made yet.</p>}
-        {report?.sections.map((section) => (
-          <section key={section.title}>
-            <p className="text-sm font-semibold">{section.title}</p>
-            <table className="w-full text-sm">
-              <tbody>
-                {section.rows.map((row, i) => (
-                  <tr key={`${row.label}-${i}`} className="border-b last:border-0">
-                    <td className={cn("py-1 pr-3", row.tone && TONE[row.tone])} dir="auto">
-                      {row.label}
-                    </td>
-                    <td className={cn("py-1 text-right", row.tone && TONE[row.tone])} dir="auto">
-                      {row.value}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {section.note && <p className="mt-1 text-xs text-muted-foreground">{section.note}</p>}
-          </section>
-        ))}
+        {report && (
+          <>
+            {report.sections.slice(0, 1).map((section) => (
+              <section key={section.title}>
+                <p className="text-sm font-semibold">{section.title}</p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {section.rows.map((row, i) => (
+                      <tr key={`${row.label}-${i}`} className="border-b last:border-0">
+                        <td className={cn("py-1 pr-3", row.tone && TONE[row.tone])} dir="auto">{row.label}</td>
+                        <td className={cn("py-1 text-right", row.tone && TONE[row.tone])} dir="auto">{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {section.explanation && <p className="mt-2 text-xs text-muted-foreground">{section.explanation}</p>}
+                {section.note && <p className="mt-1 text-xs text-muted-foreground">{section.note}</p>}
+                <details className="mt-3 rounded-md border px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium">How this number was worked out</summary>
+                  {section.details ? (
+                    section.details.length ? (
+                      <table className="mt-2 w-full text-sm">
+                        <tbody>
+                          {section.details.map((row, i) => (
+                            <tr key={`${row.label}-${i}`} className="border-b last:border-0">
+                              <td className={cn("py-1 pr-3", row.tone && TONE[row.tone])} dir="auto">{row.label}</td>
+                              <td className={cn("py-1 text-right", row.tone && TONE[row.tone])} dir="auto">{row.value}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">No separate line items were needed for this number.</p>
+                    )
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">This older report was saved before its calculation details were kept.</p>
+                  )}
+                </details>
+              </section>
+            ))}
+            {report.sections.slice(1).map((section) => (
+              <details key={section.title} className="rounded-md border px-3 py-2">
+                <summary className="cursor-pointer text-sm font-semibold">{section.title}</summary>
+                <table className="mt-2 w-full text-sm">
+                  <tbody>
+                    {section.rows.map((row, i) => (
+                      <tr key={`${row.label}-${i}`} className="border-b last:border-0">
+                        <td className={cn("py-1 pr-3", row.tone && TONE[row.tone])} dir="auto">{row.label}</td>
+                        <td className={cn("py-1 text-right", row.tone && TONE[row.tone])} dir="auto">{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {section.explanation && <p className="mt-2 text-xs text-muted-foreground">{section.explanation}</p>}
+                {section.note && <p className="mt-1 text-xs text-muted-foreground">{section.note}</p>}
+              </details>
+            ))}
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -371,10 +437,18 @@ function ReportCard({ type, report, onMade }: { type: ReportType; report: Report
 
 export function ReportsPanel() {
   const [reports, setReports] = useState<Record<ReportType, Report | null> | null>(null);
+  const [selected, setSelected] = useState<ReportType>("weekly");
   const [error, setError] = useState("");
   useEffect(() => {
     getReports()
-      .then(setReports)
+      .then((loaded) => {
+        setReports(loaded);
+        const latest = (Object.keys(REPORT_INFO) as ReportType[])
+          .map((type) => loaded[type])
+          .filter((report): report is Report => report !== null)
+          .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+        if (latest) setSelected(latest.type);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load reports"));
   }, []);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
@@ -382,11 +456,28 @@ export function ReportsPanel() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        The daily task makes each report when it is due and saves it here. "Make now" builds a fresh one from today's data.
+        The daily task saves each report when it is due. Generate a fresh report for the period named on its button.
       </p>
-      {(Object.keys(REPORT_INFO) as ReportType[]).map((type) => (
-        <ReportCard key={type} type={type} report={reports[type]} onMade={(r) => setReports((all) => (all ? { ...all, [type]: r } : all))} />
-      ))}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Choose a report">
+        {(Object.keys(REPORT_INFO) as ReportType[]).map((type) => (
+          <Button
+            key={type}
+            type="button"
+            size="sm"
+            variant={selected === type ? "default" : "outline"}
+            aria-pressed={selected === type}
+            onClick={() => setSelected(type)}
+          >
+            {REPORT_INFO[type].name}{!reports[type] && " · Not made yet"}
+          </Button>
+        ))}
+      </div>
+      <ReportCard
+        key={selected}
+        type={selected}
+        report={reports[selected]}
+        onMade={(r) => setReports((all) => (all ? { ...all, [selected]: r } : all))}
+      />
     </div>
   );
 }

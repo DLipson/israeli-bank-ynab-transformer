@@ -21,6 +21,9 @@ export interface ReportSection {
   title: string;
   rows: ReportRow[];
   note?: string;
+  explanation?: string;
+  /** Saved calculation inputs, so the report can explain itself later. */
+  details?: ReportRow[];
 }
 
 export interface Report {
@@ -28,12 +31,15 @@ export interface Report {
   title: string;
   generatedAt: string;
   dataAsOf: string;
+  /** Missing on reports saved before scrape timestamps were recorded. */
+  lastScrapedAt?: string | null;
   sections: ReportSection[];
 }
 
 /** What the reports read: the engine output plus a few extra facts. */
 export interface ReportInput {
   today: string;
+  lastScrapedAt: string | null;
   periodEnd: string;
   mode: "cashflow" | "ynab";
   cashflow: LeftToSpend;
@@ -100,13 +106,29 @@ function leftSection(input: ReportInput, title: string): ReportSection {
     { label: names[input.mode === "cashflow" ? "ynab" : "cashflow"], value: f(other.total), tone: "muted" },
   ];
   if (expected) rows.push({ label: "Normal spending still expected", value: f(-expected.amount), tone: "muted" });
-  return { title, rows, note: [...main.warnings].join(" ") || undefined };
+  const explanation =
+    input.mode === "cashflow"
+      ? `This estimate covers ${dayName(input.today)} through ${dayName(input.periodEnd)}. The lines below show the account balances and deductions used to get the total.`
+      : `This adds the available balances in the spending groups shown below, using the current YNAB budget on ${dayName(input.today)}. Money in Ready to Assign is left out.`;
+  const note = [
+    ...main.warnings,
+    ...(input.mode === "cashflow" ? ["Future credit card installments are not included in this number."] : []),
+  ].join(" ");
+  return {
+    title,
+    rows,
+    explanation,
+    details: main.lines.map((line) => ({ label: line.label, value: f(line.amount), tone: line.amount < 0 ? "muted" : undefined })),
+    note: note || undefined,
+  };
 }
 
 function attentionSection(input: ReportInput): ReportSection {
   const rows: ReportRow[] = [];
-  const age = Math.round((Date.parse(input.today) - Date.parse(input.baseline.asOf)) / DAY_MS);
-  if (age >= 3) rows.push({ label: "Bank data", value: `last import ${dayName(input.baseline.asOf)} (${age} days ago): run a scrape`, tone: "warn" });
+  const scrapeDate = input.lastScrapedAt?.slice(0, 10);
+  const age = scrapeDate ? Math.max(0, Math.round((Date.parse(input.today) - Date.parse(scrapeDate)) / DAY_MS)) : null;
+  if (age === null) rows.push({ label: "Bank data", value: "no successful scrape recorded: run a scrape", tone: "warn" });
+  else if (age >= 3) rows.push({ label: "Bank data", value: `last successful scrape ${dayName(scrapeDate!)} (${age} days ago): run a scrape`, tone: "warn" });
   if (input.suggestionsCount) rows.push({ label: "Repeating payments without a schedule", value: String(input.suggestionsCount), tone: "warn" });
   if (input.uncategorizedCount) rows.push({ label: "Uncategorized transactions", value: String(input.uncategorizedCount), tone: "warn" });
   const noLimit = input.exposure.filter((g) => g.limit === null && g.used > 0).length;
@@ -127,6 +149,7 @@ export function weeklyReport(input: ReportInput, generatedAt: string): Report {
     title: `Weekly report — ${dayName(input.today)}`,
     generatedAt,
     dataAsOf: b.asOf,
+    lastScrapedAt: input.lastScrapedAt,
     sections: [
       leftSection(input, `Left to spend until ${dayName(input.periodEnd)}`),
       {
@@ -169,6 +192,7 @@ export function monthStartReport(input: ReportInput, generatedAt: string): Repor
     title: `Start of ${monthName(month)}`,
     generatedAt,
     dataAsOf: input.baseline.asOf,
+    lastScrapedAt: input.lastScrapedAt,
     sections: [
       {
         title: `${monthName(prev.month)} in one line`,
@@ -211,7 +235,8 @@ export function monthEndReport(
   categories: MonthCategoryResult[],
   totals: { spent: number; normal: number; uncategorized: number },
   dataAsOf: string,
-  generatedAt: string
+  generatedAt: string,
+  lastScrapedAt: string | null = null
 ): Report {
   const assigned = categories.reduce((sum, c) => sum + c.assigned, 0);
   const differences = categories
@@ -225,6 +250,7 @@ export function monthEndReport(
     title: `End of ${monthName(month)}: actual vs. plan`,
     generatedAt,
     dataAsOf,
+    lastScrapedAt,
     sections: [
       {
         title: "Totals",
@@ -240,6 +266,14 @@ export function monthEndReport(
             value: f(totals.spent - assigned),
             tone: totals.spent > assigned ? "bad" : "good",
           },
+        ],
+        explanation: "Spent comes from imported transactions for this month, including uncategorized ones. The rows below compare YNAB category activity with the amount assigned; they may not add up to the imported spending total.",
+        details: [
+          ...categories.map((c) => ({
+            label: `${c.group} / ${c.name}`,
+            value: `YNAB activity ${f(c.spent)} · assigned ${f(c.assigned)}`,
+          })),
+          ...(totals.uncategorized ? [{ label: "Not categorized", value: `spent ${f(totals.uncategorized)}`, tone: "warn" as Tone }] : []),
         ],
       },
       {
@@ -285,9 +319,11 @@ export function dueReports(today: string, state: ReportState): Array<{ type: Rep
   const due: Array<{ type: ReportType; month?: string }> = [];
   if (!state.weekly || state.weekly < lastSunday(today)) due.push({ type: "weekly" });
   if (state["month-start"] !== today.slice(0, 7)) due.push({ type: "month-start" });
-  const endMonth = lastDayOfMonth(today)
-    ? today.slice(0, 7)
-    : addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7);
+  const endMonth = monthEndTarget(today);
   if (state["month-end"] !== endMonth && (state["month-end"] ?? "") < endMonth) due.push({ type: "month-end", month: endMonth });
   return due;
+}
+
+export function monthEndTarget(today: string): string {
+  return lastDayOfMonth(today) ? today.slice(0, 7) : addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7);
 }

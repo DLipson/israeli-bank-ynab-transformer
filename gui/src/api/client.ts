@@ -364,6 +364,7 @@ export interface ScheduleSuggestion {
 
 export interface SpendingData {
   today: string;
+  lastScrapedAt: string | null;
   periodEnd: string;
   settings: SpendingSettings;
   cashflow: LeftToSpend;
@@ -412,10 +413,14 @@ export interface Report {
   title: string;
   generatedAt: string;
   dataAsOf: string;
+  /** Missing on reports saved before scrape timestamps were recorded. */
+  lastScrapedAt?: string | null;
   sections: Array<{
     title: string;
     rows: Array<{ label: string; value: string; tone?: "good" | "bad" | "warn" | "muted" }>;
     note?: string;
+    explanation?: string;
+    details?: Array<{ label: string; value: string; tone?: "good" | "bad" | "warn" | "muted" }>;
   }>;
 }
 

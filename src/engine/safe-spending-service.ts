@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { listRuns, type RunSummary } from "../history.js";
 import { ensureAppConfigDirExists, getAppConfigDir } from "../env.js";
 import { loadYnabImportConfig, ynabRequest } from "../ynab/import-service.js";
 import { getAllTransactions } from "../ynab/transaction-cache.js";
@@ -55,11 +56,15 @@ function budgetPath(): string {
   return `/budgets/${encodeURIComponent(id)}`;
 }
 
-/** The newest imported transaction up to today: how fresh the bank data is. */
+/** The newest imported transaction up to today, used as the spending pace cutoff. */
 export function dataAsOf(transactions: { date: string; import_id?: string | null; deleted: boolean }[], today: string): string {
   let newest = "";
   for (const t of transactions) if (!t.deleted && t.import_id && t.date <= today && t.date > newest) newest = t.date;
   return newest || today;
+}
+
+export function lastSuccessfulScrapeAt(runs: Pick<RunSummary, "createdAt" | "accounts">[]): string | null {
+  return runs.find((run) => run.accounts.length > 0 && run.accounts.every((account) => account.success))?.createdAt ?? null;
 }
 
 export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10)) {
@@ -73,6 +78,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
 
   const settings = loadSettings();
   if (!settings.overdraft) settings.overdraft = guessOverdraft(accounts);
+  const lastScrapedAt = lastSuccessfulScrapeAt(listRuns());
 
   const snapshot: Snapshot = { today, accounts, month, transactions, scheduled, settings };
   const cashflow = leftCashflow(snapshot);
@@ -85,6 +91,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
 
   return {
     today,
+    lastScrapedAt,
     periodEnd: end,
     settings,
     cashflow,

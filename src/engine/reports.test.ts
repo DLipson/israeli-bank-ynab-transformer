@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dueReports, monthEndReport, monthStartReport, weeklyReport, type ReportInput } from "./reports.js";
+import { dueReports, monthEndReport, monthEndTarget, monthStartReport, weeklyReport, type ReportInput } from "./reports.js";
 
 const K = 1000;
 const pace = (name: string, status: "under" | "on" | "over" | "fixed-paid" | "fixed-due", thisMonth = 0, normalByToday = 0) => ({
@@ -14,6 +14,7 @@ const pace = (name: string, status: "under" | "on" | "over" | "fixed-paid" | "fi
 function input(o: Partial<ReportInput> = {}): ReportInput {
   return {
     today: "2026-10-18",
+    lastScrapedAt: "2026-10-17T00:00:00Z",
     periodEnd: "2026-10-31",
     mode: "cashflow",
     cashflow: { total: 21815 * K, lines: [{ label: "Expected normal spending until 2026-10-31", amount: -9498 * K }], warnings: [] },
@@ -44,6 +45,13 @@ const text = (r: { sections: Array<{ title: string; rows: Array<{ label: string;
   r.sections.map((s) => [s.title, ...s.rows.map((row) => `${row.label}: ${row.value}`)].join("\n")).join("\n");
 
 describe("weeklyReport", () => {
+  it("saves the explanation and calculation lines with the report", () => {
+    const section = weeklyReport(input(), "x").sections[0];
+    expect(section.explanation).toContain("18 Oct through 31 Oct");
+    expect(section.details).toHaveLength(1);
+    expect(section.details?.[0].label).toBe("Expected normal spending until 2026-10-31");
+  });
+
   it("has left to spend, pace with the top category, the next 7 days, credit, and what needs attention", () => {
     const t = text(weeklyReport(input(), "2026-10-18T10:00:00Z"));
     expect(t).toContain("Cash-flow (main): ₪21,815");
@@ -60,8 +68,13 @@ describe("weeklyReport", () => {
   });
 
   it("warns when the bank data is 3 or more days old", () => {
-    const t = text(weeklyReport(input({ baseline: { ...input().baseline, asOf: "2026-10-05" } }), "x"));
-    expect(t).toContain("last import 5 Oct (13 days ago): run a scrape");
+    const t = text(weeklyReport(input({ lastScrapedAt: "2026-10-05T00:00:00Z" }), "x"));
+    expect(t).toContain("last successful scrape 5 Oct (13 days ago): run a scrape");
+  });
+
+  it("warns when no successful scrape is recorded", () => {
+    const t = text(weeklyReport(input({ lastScrapedAt: null }), "x"));
+    expect(t).toContain("no successful scrape recorded: run a scrape");
   });
 });
 
@@ -96,6 +109,11 @@ describe("monthEndReport", () => {
 });
 
 describe("dueReports", () => {
+  it("uses this month at month end, otherwise the previous full month", () => {
+    expect(monthEndTarget("2026-10-31")).toBe("2026-10");
+    expect(monthEndTarget("2026-10-30")).toBe("2026-09");
+  });
+
   it("makes the weekly report on Sunday, and catches up once after a missed Sunday", () => {
     // 2026-10-18 is a Sunday.
     expect(dueReports("2026-10-18", { weekly: "2026-10-11", "month-start": "2026-10", "month-end": "2026-09" })).toEqual([{ type: "weekly" }]);

@@ -7,6 +7,7 @@ import type { MonthCategory } from "./safe-spending.js";
 import {
   dueReports,
   monthEndReport,
+  monthEndTarget,
   monthStartReport,
   weeklyReport,
   type Report,
@@ -47,10 +48,6 @@ function save(report: Report, stateValue: string): void {
   writeFileSync(join(dir, "state.json"), JSON.stringify(state, null, 2), "utf-8");
 }
 
-function previousMonth(today: string): string {
-  return new Date(Date.parse(`${today.slice(0, 7)}-01T00:00:00Z`) - 86400000).toISOString().slice(0, 7);
-}
-
 /** Builds and saves one report. `month` (yyyy-mm) is used by the end-of-month report only. */
 export async function generateReport(token: string, type: ReportType, month?: string, now = new Date()): Promise<Report> {
   const today = now.toISOString().slice(0, 10);
@@ -58,6 +55,7 @@ export async function generateReport(token: string, type: ReportType, month?: st
   const s = await getSpending(token, today);
   const input: ReportInput = {
     today,
+    lastScrapedAt: s.lastScrapedAt,
     periodEnd: s.periodEnd,
     mode: s.settings.mode,
     cashflow: s.cashflow,
@@ -83,7 +81,7 @@ export async function generateReport(token: string, type: ReportType, month?: st
     return report;
   }
 
-  const target = month ?? previousMonth(today);
+  const target = month ?? monthEndTarget(today);
   const budget = loadYnabImportConfig().budgetId;
   const { month: data } = await ynabRequest<{ month: { categories: Array<MonthCategory & { budgeted: number; activity: number }> } }>(
     token,
@@ -94,7 +92,7 @@ export async function generateReport(token: string, type: ReportType, month?: st
   const categories = data.categories
     .filter((c) => !c.hidden && !c.deleted && groupOf.has(c.id))
     .map((c) => ({ name: c.name, group: groupOf.get(c.id)!, assigned: c.budgeted, spent: -c.activity, normal: normals.get(c.name) ?? 0 }));
-  const report = monthEndReport(target, categories, s.monthTotals(target), s.baseline.asOf, generatedAt);
+  const report = monthEndReport(target, categories, s.monthTotals(target), s.baseline.asOf, generatedAt, s.lastScrapedAt);
   save(report, target);
   return report;
 }
