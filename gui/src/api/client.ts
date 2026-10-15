@@ -426,6 +426,23 @@ export async function generateReport(type: ReportType): Promise<Report> {
   return request(`/spending/reports/${type}`, { method: "POST" });
 }
 
+// --- Reconcile ---
+
+export interface AccountReconcile {
+  source: string;
+  accountId: string;
+  accountName: string;
+  from: string;
+  to: string;
+  matched: number;
+  missingInYnab: Array<{ date: string; amount: number; payee: string }>;
+  missingInBank: Array<{ id: string; date: string; amount: number; payee_name: string | null }>;
+}
+
+export async function getReconcile(): Promise<AccountReconcile[]> {
+  return (await request<{ accounts: AccountReconcile[] }>("/spending/reconcile")).accounts;
+}
+
 export async function dismissAnomaly(id: string): Promise<void> {
   await request("/spending/anomalies/dismiss", { method: "POST", body: JSON.stringify({ id }) });
 }

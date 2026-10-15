@@ -12,6 +12,7 @@ import {
 import type { CreditLimitGroup, Settings } from "../../engine/safe-spending.js";
 import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
 import type { ReportType } from "../../engine/reports.js";
+import { getReconcile } from "../../engine/reconcile-service.js";
 
 const router = Router();
 
@@ -144,6 +145,14 @@ router.post(
 );
 
 router.get("/reports", handle(() => latestReports()));
+
+router.get(
+  "/reconcile",
+  handle(async () => {
+    loadAppEnv({ override: true });
+    return { accounts: await getReconcile(getYnabToken()) };
+  })
+);
 
 /** Makes one report now and saves it (read-only towards YNAB). */
 router.post(

@@ -6,6 +6,7 @@ import { YnabPage } from "@/pages/YnabPage";
 import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
+import { ReconcilePage } from "@/pages/ReconcilePage";
 import { AnomaliesPanel, ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
 import { useSpending } from "@/lib/spending";
 
@@ -92,6 +93,7 @@ function Shell() {
               { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
               { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
               { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
+              { value: "reconcile", label: "Reconcile", content: <ReconcilePage /> },
             ]}
           />
         </TabsContent>
