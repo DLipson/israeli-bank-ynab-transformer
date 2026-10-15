@@ -5,8 +5,8 @@ import { ynabRequest } from "./import-service.js";
 import type { YnabTransaction } from "./categorize.js";
 
 /**
- * Local copy of all YNAB transactions for one budget, kept current with YNAB delta requests:
- * the first load downloads everything, later loads ask only for changes since `serverKnowledge`.
+ * Local copy of all YNAB transactions for one budget. The first load downloads everything;
+ * later loads use deltas and refresh the current and previous month from a full snapshot.
  * ponytail: one JSON file per budget; move to SQLite when the core engine needs queries.
  */
 interface CacheFile {
@@ -28,6 +28,15 @@ export function mergeDelta(cached: YnabTransaction[], delta: YnabTransaction[]):
   return [...byId.values()];
 }
 
+/** Replace cached transactions from a date onward with a current snapshot. */
+export function replaceSinceDate(
+  cached: YnabTransaction[],
+  snapshot: YnabTransaction[],
+  sinceDate: string
+): YnabTransaction[] {
+  return [...cached.filter((t) => t.date < sinceDate), ...snapshot.filter((t) => !t.deleted)];
+}
+
 export async function getAllTransactions(token: string, budgetId: string): Promise<YnabTransaction[]> {
   const path = cachePath(budgetId);
   const cache: CacheFile | null = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as CacheFile) : null;
@@ -39,8 +48,27 @@ export async function getAllTransactions(token: string, budgetId: string): Promi
     `/budgets/${encodeURIComponent(budgetId)}/transactions${query}`
   );
 
-  const transactions = mergeDelta(cache?.transactions ?? [], data.transactions);
-  if (!cache || data.transactions.length > 0 || data.server_knowledge !== cache.serverKnowledge) {
+  let transactions = mergeDelta(cache?.transactions ?? [], data.transactions);
+  if (cache) {
+    // shortcut: reconcile current and previous month only; widen if older deletions affect history.
+    const date = new Date();
+    const refreshFrom = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1)
+    )
+      .toISOString()
+      .slice(0, 10);
+    const recent = await ynabRequest<{ transactions: YnabTransaction[] }>(
+      token,
+      `/budgets/${encodeURIComponent(budgetId)}/transactions?since_date=${refreshFrom}`
+    );
+    transactions = replaceSinceDate(transactions, recent.transactions, refreshFrom);
+  }
+  if (
+    !cache ||
+    data.transactions.length > 0 ||
+    data.server_knowledge !== cache.serverKnowledge ||
+    JSON.stringify(transactions) !== JSON.stringify(cache.transactions)
+  ) {
     mkdirSync(join(getAppConfigDir(), "ynab-cache"), { recursive: true });
     writeFileSync(path, JSON.stringify({ serverKnowledge: data.server_knowledge, transactions } satisfies CacheFile), "utf-8");
   }

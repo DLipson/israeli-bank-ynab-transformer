@@ -171,8 +171,13 @@ function MonthlyActuals({ data }: { data: SpendingData }) {
         <h2 className="text-sm font-semibold">{monthLabel(flow.month)} income and expenses</h2>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <p className="text-xs text-muted-foreground">Spent on expenses</p>
+            <p className="text-xs text-muted-foreground">Transaction spending</p>
             <p className="text-2xl font-semibold tracking-tight">{shekels(flow.expenses)}</p>
+            {flow.planActivity !== null && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                YNAB plan activity: {shekels(flow.planActivity)}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Income counted for {monthLabel(flow.month)}</p>
@@ -182,6 +187,12 @@ function MonthlyActuals({ data }: { data: SpendingData }) {
             </p>
           </div>
         </div>
+        {flow.planActivity !== null && (
+          <p className="text-xs text-muted-foreground">
+            YNAB Activity includes category movements such as Credit Card Payments, so it can differ
+            from transaction spending.
+          </p>
+        )}
         {flow.carriedIncome > 0 && (
           <p className="border-t pt-2 text-xs text-muted-foreground">
             Includes {shekels(flow.carriedIncome)} received {formatDate(flow.carryoverFrom)} to{" "}

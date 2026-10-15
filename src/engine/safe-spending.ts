@@ -28,6 +28,7 @@ export interface MonthCategory {
 
 export interface Month {
   month: string;
+  activity?: number;
   to_be_budgeted: number;
   categories: MonthCategory[];
 }

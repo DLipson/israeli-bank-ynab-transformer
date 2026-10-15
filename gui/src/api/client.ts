@@ -366,6 +366,7 @@ export interface SpendingData {
   monthlyFlow: {
     month: string;
     expenses: number;
+    planActivity: number | null;
     income: number;
     incomeThisMonth: number;
     carriedIncome: number;
