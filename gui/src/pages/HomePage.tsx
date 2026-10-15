@@ -161,6 +161,39 @@ function Summaries({ data }: { data: SpendingData }) {
   );
 }
 
+function MonthlyActuals({ data }: { data: SpendingData }) {
+  const flow = data.monthlyFlow;
+  const carryoverMonth = flow.carryoverFrom.slice(0, 7);
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <h2 className="text-sm font-semibold">{monthLabel(flow.month)} income and expenses</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Spent on expenses</p>
+            <p className="text-2xl font-semibold tracking-tight">{shekels(flow.expenses)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Income counted for {monthLabel(flow.month)}</p>
+            <p className="text-2xl font-semibold tracking-tight text-green-700">{shekels(flow.income)}</p>
+            <p className="text-xs text-muted-foreground">
+              {shekels(flow.incomeThisMonth)} received in {monthLabel(flow.month)}
+            </p>
+          </div>
+        </div>
+        {flow.carriedIncome > 0 && (
+          <p className="border-t pt-2 text-xs text-muted-foreground">
+            Includes {shekels(flow.carriedIncome)} received {formatDate(flow.carryoverFrom)} to{" "}
+            {formatDate(flow.carryoverTo)} (the last 7 days of {monthLabel(carryoverMonth)}), counted toward{" "}
+            {monthLabel(flow.month)} income.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function HomePage({ navigate }: { navigate: Navigate }) {
   const { data, loading, reload, setMode } = useSpending();
   const [details, setDetails] = useState(false);
@@ -217,6 +250,7 @@ export function HomePage({ navigate }: { navigate: Navigate }) {
         </CardContent>
       </Card>
 
+      <MonthlyActuals data={data} />
       <NeedsAttention data={data} navigate={navigate} />
       {!details && <Summaries data={data} />}
 
