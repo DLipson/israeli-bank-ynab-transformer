@@ -90,7 +90,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const previous = pastMonths(today, 1)[0];
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
-  const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today);
+  const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
   return {
     today,
     lastScrapedAt,

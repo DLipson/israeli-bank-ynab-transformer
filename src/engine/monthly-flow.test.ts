@@ -35,9 +35,12 @@ describe("monthlyFlowFor", () => {
       txn({ date: "2026-10-05", amount: 900 * K, deleted: true, category_id: "inflow", category_name: "Inflow: Ready to Assign" }),
     ];
 
-    expect(monthlyFlowFor(transactions, spendItems(transactions), [], "2026-10-15")).toEqual({
+    expect(
+      monthlyFlowFor(transactions, spendItems(transactions), [], "2026-10-15", -23321340)
+    ).toEqual({
       month: "2026-10",
       expenses: 80 * K,
+      planActivity: -23321340,
       income: 3500 * K,
       incomeThisMonth: 1500 * K,
       carriedIncome: 2000 * K,

@@ -5,6 +5,7 @@ import type { MonthCategory } from "./safe-spending.js";
 export interface MonthlyFlow {
   month: string;
   expenses: number;
+  planActivity: number | null;
   income: number;
   incomeThisMonth: number;
   carriedIncome: number;
@@ -16,7 +17,8 @@ export function monthlyFlowFor(
   transactions: YnabTransaction[],
   items: SpendItem[],
   categories: MonthCategory[],
-  today: string
+  today: string,
+  planActivity: number | null = null
 ): MonthlyFlow {
   const month = today.slice(0, 7);
   const previous = pastMonths(today, 1)[0];
@@ -76,6 +78,7 @@ export function monthlyFlowFor(
           !(i.categoryId === "Uncategorized" && i.amount < 0)
       )
       .reduce((sum, i) => sum + i.amount, 0),
+    planActivity,
     income: incomeThisMonth + carriedIncome,
     incomeThisMonth,
     carriedIncome,
