@@ -30,9 +30,24 @@ interface Attention {
 /** Everything that needs the user's action, in one list; each item links to where it is fixed. */
 function attentionItems(data: SpendingData, navigate: Navigate): Attention[] {
   const items: Attention[] = [];
-  const age = Math.round((Date.parse(data.today) - Date.parse(data.baseline.asOf)) / DAY_MS);
-  if (age >= 3) {
-    items.push({ key: "scrape", icon: Clock, text: `Bank data is ${age} days old`, action: "Scrape now", go: () => navigate("scrape") });
+  const scrapeDate = data.lastScrapedAt?.slice(0, 10);
+  const age = scrapeDate ? Math.max(0, Math.round((Date.parse(data.today) - Date.parse(scrapeDate)) / DAY_MS)) : null;
+  if (age === null) {
+    items.push({
+      key: "scrape",
+      icon: Clock,
+      text: "No successful bank scrape is recorded",
+      action: "Scrape now",
+      go: () => navigate("scrape"),
+    });
+  } else if (age >= 3) {
+    items.push({
+      key: "scrape",
+      icon: Clock,
+      text: `Last successful scrape was ${age} days ago`,
+      action: "Scrape now",
+      go: () => navigate("scrape"),
+    });
   }
   if (data.suggestions.length) {
     const n = data.suggestions.length;
@@ -116,7 +131,9 @@ function Summaries({ data }: { data: SpendingData }) {
               {p.name}
             </span>
             <span className="shrink-0 text-red-700">
-              {p.difference === null ? shekels(p.thisMonth) : `+${Math.round(p.difference * 100)}%`}
+              {p.difference === null
+                ? shekels(p.thisMonth)
+                : `${shekels(p.thisMonth)} (+${Math.round(p.difference * 100)}%)`}
             </span>
           </p>
         ))}
@@ -153,8 +170,14 @@ export function HomePage({ navigate }: { navigate: Navigate }) {
   const main = mode === "cashflow" ? data.cashflow : data.ynab;
   const label =
     mode === "ynab"
-      ? `Available in your flexible YNAB categories`
-      : `Left to spend until ${formatDate(data.periodEnd)}${data.settings.subtractExpected ? ", after your usual spending" : ""}`;
+      ? "YNAB categories · available to spend"
+      : `Cash-flow · left to spend until ${formatDate(data.periodEnd)}`;
+  const meaning =
+    mode === "ynab"
+      ? data.settings.flexibleCategoryIds.length
+        ? `Available balances in ${data.settings.flexibleCategoryIds.length} selected spending categories.`
+        : "Available balances in all YNAB spending categories."
+      : "Based on account balances, with the payments and adjustments shown in the explanation below.";
   const pace = data.baseline.total;
   const words = PACE_WORDS[pace.status];
 
@@ -169,6 +192,10 @@ export function HomePage({ navigate }: { navigate: Navigate }) {
             </Button>
           </div>
           <p className={cn("text-4xl font-bold tracking-tight", main.total < 0 && "text-red-700")}>{shekels(main.total)}</p>
+          <p className="text-xs text-muted-foreground">{meaning}</p>
+          {mode === "cashflow" && (
+            <p className="text-xs text-muted-foreground">Future installments are not included; see credit and coming months.</p>
+          )}
           <p className="flex flex-wrap items-center gap-2 text-sm">
             <span className={cn("rounded px-2 py-0.5 text-xs font-medium", words.style)}>{words.text}</span>
             <span className="text-muted-foreground">
@@ -180,7 +207,7 @@ export function HomePage({ navigate }: { navigate: Navigate }) {
             onClick={() => setDetails((d) => !d)}
             aria-expanded={details}
           >
-            <ChevronDown className={cn("h-4 w-4 transition-transform", details && "rotate-180")} /> {details ? "Hide details" : "Details"}
+            <ChevronDown className={cn("h-4 w-4 transition-transform", details && "rotate-180")} /> {details ? "Hide explanation" : "How this was worked out"}
           </button>
           {details && (
             <div className="border-t pt-3">
@@ -191,7 +218,7 @@ export function HomePage({ navigate }: { navigate: Navigate }) {
       </Card>
 
       <NeedsAttention data={data} navigate={navigate} />
-      <Summaries data={data} />
+      {!details && <Summaries data={data} />}
 
       {details && (
         <div className="space-y-3">

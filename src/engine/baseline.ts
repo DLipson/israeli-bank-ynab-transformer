@@ -17,6 +17,7 @@ export interface SpendItem {
   categoryId: string;
   categoryName: string;
   accountId: string;
+  payeeName?: string | null;
   installment: boolean;
 }
 
@@ -32,6 +33,9 @@ interface ScheduleLike {
   date_next: string;
   amount: number;
   account_id: string;
+  category_id?: string | null;
+  category_name?: string | null;
+  payee_name?: string | null;
   deleted: boolean;
 }
 
@@ -62,6 +66,7 @@ export function spendItems(transactions: YnabTransaction[]): SpendItem[] {
         categoryId: uncategorized ? UNCATEGORIZED : p.category_id!,
         categoryName: uncategorized ? UNCATEGORIZED : p.category_name ?? "",
         accountId: t.account_id,
+        payeeName: t.payee_name,
         installment,
       });
     }
@@ -118,11 +123,40 @@ function sumDays(items: SpendItem[], month: string, fromDay: number, toDay: numb
 const COVER_SHARE = 0.25;
 const COVER_DAYS = 5;
 
-/** True when a schedule on the same account covers this spending (amount within 25%, day within 5). */
+function normalizedName(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
+  const leftName = normalizedName(a);
+  const rightName = normalizedName(b);
+  if (leftName && leftName === rightName) return true;
+  const tokens = (value: string | null | undefined) =>
+    new Set(normalizedName(value).split(/\s+/).filter(Boolean));
+  const left = tokens(a);
+  const right = tokens(b);
+  if (!left.size || !right.size) return false;
+  const overlap = [...left].filter((token) => right.has(token)).length;
+  return overlap >= 2 && overlap / Math.min(left.size, right.size) >= 0.75;
+}
+
+/** Match by payee, or by category when either payee is missing, then check account, amount, and day. */
 function scheduled(item: SpendItem, schedules: ScheduleLike[]): boolean {
   const day = Number(item.date.slice(8, 10));
   return schedules.some((s) => {
     if (s.deleted || s.amount >= 0 || s.account_id !== item.accountId) return false;
+    const sameCategory =
+      (!!s.category_id && s.category_id === item.categoryId) ||
+      (!!normalizedName(s.category_name) && normalizedName(s.category_name) === normalizedName(item.categoryName));
+    const itemPayee = normalizedName(item.payeeName);
+    const scheduledPayee = normalizedName(s.payee_name);
+    const bothHavePayees = Boolean(itemPayee && scheduledPayee);
+    if (!similarPayee(itemPayee, scheduledPayee) && (bothHavePayees || !sameCategory)) return false;
     const amount = -s.amount;
     const gap = Math.abs(Number(s.date_next.slice(8, 10)) - day);
     return Math.abs(item.amount - amount) <= amount * COVER_SHARE && Math.min(gap, 31 - gap) <= COVER_DAYS;

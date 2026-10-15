@@ -54,6 +54,7 @@ export interface ScheduledTransaction {
   amount: number;
   account_id: string;
   payee_name: string | null;
+  category_id?: string | null;
   category_name: string | null;
   deleted: boolean;
 }
@@ -246,7 +247,7 @@ function memoFields(memo: string | null): Record<string, unknown> {
 /** True when a scheduled transaction on the account already covers this amount and day. */
 function covered(s: ScheduledTransaction[], accountId: string, amount: number, day: number): boolean {
   return s.some((x) => {
-    if (x.deleted || x.amount >= 0 || x.account_id !== accountId) return false;
+    if (x.deleted || x.amount >= 0 || x.account_id !== accountId || x.frequency !== "monthly") return false;
     const gap = Math.abs(parts(x.date_next)[2] - day);
     return Math.abs(-x.amount - amount) <= amount * (AMOUNT_SPREAD - 1) && Math.min(gap, 31 - gap) <= COVER_DAYS;
   });

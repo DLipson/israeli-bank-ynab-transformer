@@ -130,7 +130,49 @@ describe("expected rest of the period", () => {
       item("2026-09-10", 135, "course", { installment: true }),
       item("2026-09-12", 80),
     ];
-    const kept = predictItems(items, [{ date_next: "2026-10-07", amount: -5500 * K, account_id: "main", deleted: false }]);
+    const kept = predictItems(items, [{ date_next: "2026-10-07", amount: -5500 * K, account_id: "main", category_id: "rent", category_name: "rent", deleted: false }]);
     expect(kept.map((i) => i.amount / K)).toEqual([80]);
+  });
+
+  it("does not leave out a charge based on matching account, amount, and day alone", () => {
+    const unrelated = item("2026-09-06", 5500, "rent", { payeeName: "School" });
+    const schedule = {
+      date_next: "2026-10-07",
+      amount: -5500 * K,
+      account_id: "main",
+      category_id: "school-fees",
+      category_name: "School fees",
+      payee_name: "School Board",
+      deleted: false,
+    };
+    expect(predictItems([unrelated], [schedule])).toEqual([unrelated]);
+  });
+
+  it("matches a scheduled payment by similar payee despite a different category", () => {
+    const charge = item("2026-09-06", 5500, "rent", { payeeName: "Israel Electric" });
+    const schedule = {
+      date_next: "2026-10-07",
+      amount: -5500 * K,
+      account_id: "main",
+      category_id: "utilities",
+      category_name: "Utilities",
+      payee_name: "Israel Electric Corporation",
+      deleted: false,
+    };
+    expect(predictItems([charge], [schedule])).toEqual([]);
+  });
+
+  it("does not match a different named payee just because it has the same category", () => {
+    const unrelated = item("2026-09-06", 5500, "rent", { payeeName: "School" });
+    const schedule = {
+      date_next: "2026-10-07",
+      amount: -5500 * K,
+      account_id: "main",
+      category_id: "rent",
+      category_name: "Rent",
+      payee_name: "Landlord",
+      deleted: false,
+    };
+    expect(predictItems([unrelated], [schedule])).toEqual([unrelated]);
   });
 });

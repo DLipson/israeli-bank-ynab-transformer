@@ -380,9 +380,13 @@ export function CategorizePage() {
   const suggested = open.filter((i) => i.suggestions.length > 0 || asking.has(i.id));
   const unsuggested = open.filter((i) => i.suggestions.length === 0 && !asking.has(i.id));
   const done = items.filter((i) => status[i.id]?.done);
-  // Bulk accept only strong history: one suggestion that covers at least 80% of past uses.
+  // Bulk accept only strong history with a useful sample: at least 3 uses and 80% agreement.
   const historyOnly = suggested.filter(
-    (i) => i.suggestions.length === 1 && i.suggestions[0].evidence === "history" && (i.suggestions[0].share ?? 0) >= 0.8
+    (i) =>
+      i.suggestions.length === 1 &&
+      i.suggestions[0].evidence === "history" &&
+      (i.suggestions[0].sampleSize ?? 0) >= 3 &&
+      (i.suggestions[0].share ?? 0) >= 0.8
   );
 
   const setItemStatus = (id: string, next: Status) => setStatus((s) => ({ ...s, [id]: next }));

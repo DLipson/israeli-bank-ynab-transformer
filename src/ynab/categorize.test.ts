@@ -120,6 +120,7 @@ describe("historySuggestions", () => {
     expect(result.map((s) => s.categoryId)).toEqual(["groc"]);
     expect(result[0].note).toBe('You put "Shufersal" in Groceries 9 of 10 times.');
     expect(result[0].share).toBe(0.9);
+    expect(result[0].sampleSize).toBe(10);
   });
 
   it("gives each option when the history is split, and drops one-off categories", () => {

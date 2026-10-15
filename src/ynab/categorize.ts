@@ -35,8 +35,10 @@ export interface Suggestion {
   evidence: Evidence;
   note: string;
   source?: string;
-  /** History only: the share of past uses (0-1). Bulk accept needs at least 0.8. */
+  /** History only: the share of past uses (0-1). Bulk accept needs 0.8 agreement and 3 uses. */
   share?: number;
+  /** History only: number of prior transactions used to make this suggestion. */
+  sampleSize?: number;
 }
 
 /** person = transfer to or from a named account holder; such names never leave this computer. */
@@ -285,6 +287,7 @@ export function historySuggestions(
         evidence: "history" as const,
         note: `You put ${who} in ${category.name} ${n} of ${total} time${total === 1 ? "" : "s"}.${amountNote}`,
         share: n / total,
+        sampleSize: total,
       },
     ];
   });

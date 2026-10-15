@@ -89,6 +89,18 @@ describe("detectAnomalies", () => {
     expect(found.find((a) => a.kind === "price-increase")?.detail).toBe("₪64 this time; it was ₪54 a month before.");
   });
 
+  it("does not call charges in nonconsecutive months a monthly price increase", () => {
+    const charges = ["2026-06-28", "2026-08-28", "2026-09-28"].map((d) => txn(d, 54, { payee_name: "Phone" }));
+    const found = detectAnomalies([...charges, txn("2026-10-10", 64, { payee_name: "Phone" })], [], AS_OF);
+    expect(found.some((a) => a.kind === "price-increase")).toBe(false);
+  });
+
+  it("does not report a price increase when the latest prior month has no charge", () => {
+    const charges = ["2026-06-28", "2026-07-28", "2026-08-28"].map((d) => txn(d, 54, { payee_name: "Phone" }));
+    const found = detectAnomalies([...charges, txn("2026-10-10", 64, { payee_name: "Phone" })], [], AS_OF);
+    expect(found.some((a) => a.kind === "price-increase")).toBe(false);
+  });
+
   it("finds a category already well over a whole normal month, but not a fixed one", () => {
     const pace = (name: string, normalMonth: number, thisMonth: number, status: Pace["status"] = "over"): Pace => ({
       name,
