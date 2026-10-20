@@ -3,7 +3,7 @@ import { CreditCard, Loader2, Pencil, TrendingUp } from "lucide-react";
 import { Expand, Line, Muted, TxLine } from "@/components/Rows";
 import { card, label, link, row, useOpen } from "@/lib/rows";
 import { RefundPicker } from "@/components/RefundPicker";
-import { saveSpendingSettings, type CategoryComparison, type SpendingData } from "@/api/client";
+import { saveSpendingSettings, setIncomeMark, type CategoryComparison, type IncomeMark, type SpendingData } from "@/api/client";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { K, formatDate, nextEssentialsOverride, shekels, useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,20 @@ const COMPARE_WORD: Record<CategoryComparison["type"], string> = { occasional: "
 
 function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navigate: Navigate; open: ReturnType<typeof useOpen> }) {
   const { reload } = useSpending();
-  const [refundFor, setRefundFor] = useState("");
+  // "Change" on an income entry: a small menu, then the refund picker.
+  const [changing, setChanging] = useState<{ id: string; step: "menu" | "refund" } | null>(null);
+  const [markError, setMarkError] = useState("");
+  const mark = async (id: string, value: IncomeMark | null) => {
+    setMarkError("");
+    try {
+      await setIncomeMark(id, value);
+      setChanging(null);
+      reload({ quick: true });
+    } catch (e) {
+      setMarkError(e instanceof Error ? e.message : "Could not save");
+    }
+  };
+  const notIncome = Object.values(data.settings.incomeMarks ?? {}).filter((m) => m === "not-income").length;
   const s = data.spentVsIncome;
   const month = monthName(s.month);
   const over = s.difference < 0;
@@ -60,21 +73,42 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
                       <>
                         {!t.date.startsWith(s.month) && <Muted>(counts toward {month})</Muted>}
                         {t.oneTime && <Muted>· one-time</Muted>}
-                        {/* Only an uncategorized entry can become a refund (phase 13). */}
-                        {(t.category === null || t.category === "Uncategorized") && refundFor !== t.id && (
-                          <button type="button" className={cn(link, "ml-2 text-xs")} onClick={() => setRefundFor(t.id)}>
-                            Treat as refund
+                        {!changing && (
+                          <button type="button" className={cn(link, "ml-2 text-xs")} onClick={() => setChanging({ id: t.id, step: "menu" })}>
+                            Change
                           </button>
                         )}
                       </>
                     }
                   />
-                  {refundFor === t.id && (
+                  {changing?.id === t.id && changing.step === "menu" && (
+                    <div className="my-1 flex flex-wrap items-center gap-3 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+                      {data.settings.incomeMarks[t.id] === "income" ? (
+                        <button type="button" className={link} onClick={() => void mark(t.id, null)}>
+                          Stop counting as income
+                        </button>
+                      ) : (
+                        <>
+                          <button type="button" className={link} onClick={() => void mark(t.id, "not-income")}>
+                            Not income (for example a reconciliation)
+                          </button>
+                          <button type="button" className={link} onClick={() => setChanging({ id: t.id, step: "refund" })}>
+                            Treat as refund…
+                          </button>
+                        </>
+                      )}
+                      <button type="button" className="text-muted-foreground hover:underline" onClick={() => setChanging(null)}>
+                        Cancel
+                      </button>
+                      {markError && <span className="text-destructive">{markError}</span>}
+                    </div>
+                  )}
+                  {changing?.id === t.id && changing.step === "refund" && (
                     <RefundPicker
                       refund={t}
-                      onCancel={() => setRefundFor("")}
+                      onCancel={() => setChanging(null)}
                       onDone={() => {
-                        setRefundFor("");
+                        setChanging(null);
                         reload();
                       }}
                     />
@@ -84,6 +118,14 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
             </Expand>
           ))}
           {s.incomeParts.length === 0 && <p className="border-t py-1.5 text-sm text-muted-foreground">No income counted yet.</p>}
+          {notIncome > 0 && (
+            <p className="border-t py-1.5 text-xs text-muted-foreground">
+              {notIncome} entr{notIncome === 1 ? "y" : "ies"} marked “not income”.{" "}
+              <button type="button" className={link} onClick={() => navigate("settings", "income")}>
+                Change in Settings
+              </button>
+            </p>
+          )}
 
           {s.reasons.length > 0 && <p className={cn(label, "mb-1 mt-3")}>{over ? "What pushed you over" : "Above normal this month"}</p>}
           {s.reasons.map((r) => (

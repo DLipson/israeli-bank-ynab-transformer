@@ -242,3 +242,22 @@ export function withRefundLinks(
     }),
   };
 }
+
+export type IncomeMark = "income" | "not-income";
+
+/**
+ * The user's marks on money-in entries, for the income and spending lists only (not for balances
+ * or cards): "not-income" leaves an entry out (a reconciliation); "income" counts any positive
+ * entry as income, a transfer included (money set aside and paid out over months), and then it is
+ * not a spending refund.
+ */
+export function applyIncomeMarks(transactions: YnabTransaction[], marks: Record<string, IncomeMark>): YnabTransaction[] {
+  if (!Object.keys(marks).length) return transactions;
+  return transactions.map((t) => {
+    const mark = marks[t.id];
+    if (!mark || t.amount <= 0) return t;
+    return mark === "not-income"
+      ? { ...t, transfer_account_id: t.transfer_account_id ?? "marked-not-income", subtransactions: [] }
+      : { ...t, transfer_account_id: null, category_name: "Inflow: Ready to Assign", subtransactions: [] };
+  });
+}

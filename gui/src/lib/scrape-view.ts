@@ -43,15 +43,42 @@ export function daysBackTo(date: string, now = new Date()): number {
   return Math.max(1, Math.round((today.getTime() - new Date(y, m - 1, d).getTime()) / 86_400_000));
 }
 
+/**
+ * Library events, in the order the scraper sends them: START_SCRAPING and INITIALIZING (the
+ * browser opens the site), LOGGING_IN (the login form was sent), LOGIN_SUCCESS (then it reads, with
+ * no event), TERMINATING and END_SCRAPING. Then this repo logs "Found N … in account" and "Total".
+ */
+const EVENT_STEP: Record<string, string> = {
+  START_SCRAPING: "Opening the bank site",
+  INITIALIZING: "Opening the bank site",
+  LOGGING_IN: "Logging in",
+  LOGIN_SUCCESS: "Logged in · reading transactions",
+  LOGIN_FAILED: "Login failed",
+  CHANGE_PASSWORD: "The bank asks for a new password",
+  TERMINATING: "Closing the bank site",
+  END_SCRAPING: "Closing the bank site",
+};
+
 /** The live step of one account, from the scraper's progress messages. */
 export function accountStep(entries: LogEntry[], name: string): string {
   let step = "Waiting";
+  let found = 0;
   for (const e of entries) {
     if (e.account !== name) continue;
-    const found = /Total: (\d+) transactions/.exec(e.text);
-    if (found) step = `Found ${found[1]}`;
-    else if (/\] LOGIN_SUCCESS/.test(e.text)) step = "Reading transactions";
-    else if (/\] (INITIALIZING|START_SCRAPING|LOGGING_IN)/.test(e.text) || /^\s*Scraping /.test(e.text)) step = "Logging in";
+    const event = /\] ([A-Z_]+)\s*$/.exec(e.text)?.[1];
+    const inAccount = /Found (\d+) transactions in account/.exec(e.text);
+    const total = /Total: (\d+) transactions/.exec(e.text);
+    if (total) step = `Found ${total[1]}`;
+    else if (inAccount) step = `Found ${(found += Number(inAccount[1]))} so far`;
+    else if (event && EVENT_STEP[event]) step = EVENT_STEP[event];
+    else if (/Retrying/.test(e.text)) step = "Temporary error · trying again";
+    else if (/^\s*Scraping /.test(e.text)) step = "Starting";
   }
   return step;
+}
+
+/** The newest log line of one account, shown under its step. */
+export function lastLine(entries: LogEntry[], name: string): string {
+  for (let i = entries.length - 1; i >= 0; i--) if (entries[i].account === name && entries[i].text.trim()) return entries[i].text.trim();
+  return "";
 }

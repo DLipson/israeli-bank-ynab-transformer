@@ -1,14 +1,14 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { saveSpendingSettings, type CategoryOption, type CreditLimitGroup, type SpendingData, type SpendingSettings } from "@/api/client";
+import { getInflows, saveSpendingSettings, setIncomeMark, type CategoryOption, type CreditLimitGroup, type IncomeMark, type Inflow, type SpendingData, type SpendingSettings } from "@/api/client";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { YnabPage } from "@/pages/YnabPage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { card, label, link, row } from "@/lib/rows";
-import { K, useSpending } from "@/lib/spending";
+import { K, formatDate, shekels, useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
 
 /** A setting with its label and one help line under it (spec: no hover-only help). */
@@ -108,7 +108,85 @@ function CardLimits({ data, save }: { data: SpendingData; save: (patch: Partial<
   );
 }
 
+/**
+ * Rare cases, kept out of the way: count a money-in entry as income (a transfer of money set aside,
+ * for example), or leave one out (a reconciliation). Marks are local; YNAB does not change.
+ */
+function IncomeMarks() {
+  const { reload } = useSpending();
+  const [inflows, setInflows] = useState<Inflow[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    getInflows()
+      .then(setInflows)
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load"));
+  }, []);
+
+  const change = async (id: string, mark: IncomeMark | null) => {
+    setError("");
+    try {
+      await setIncomeMark(id, mark);
+      setInflows((list) => list?.map((i) => (i.id === id ? { ...i, mark } : i)) ?? list);
+      reload({ quick: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    }
+  };
+
+  const q = search.trim().toLowerCase();
+  const list = (inflows ?? []).filter((i) => !q || i.payee.toLowerCase().includes(q) || i.account.toLowerCase().includes(q) || (i.category ?? "").toLowerCase().includes(q));
+  const marked = list.filter((i) => i.mark);
+  const rest = list.filter((i) => !i.mark).slice(0, 40);
+
+  const Row = ({ i }: { i: Inflow }) => (
+    <div className={cn(row, "items-start")}>
+      <span className="min-w-0">
+        <span dir="auto">{i.payee || "No payee"}</span> <span className="text-muted-foreground">· {formatDate(i.date)}</span>
+        <span className="block text-xs text-muted-foreground">
+          {i.account} · {i.transfer ? "Transfer" : i.category ?? "No category"}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {shekels(i.amount)}
+        <select
+          aria-label={`Income mark for ${i.payee}`}
+          className="h-7 rounded-md border bg-background px-1 text-xs"
+          value={i.mark ?? ""}
+          onChange={(e) => void change(i.id, (e.target.value || null) as IncomeMark | null)}
+        >
+          <option value="">Usual rule</option>
+          <option value="income">Count as income</option>
+          <option value="not-income">Not income</option>
+        </select>
+      </span>
+    </div>
+  );
+
+  return (
+    <div className={card}>
+      <p className="font-medium">Income: count or leave out an entry</p>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Usual rule: income is money in that is uncategorized or in Ready to Assign, and never a transfer. Here you can count another entry as income (for example
+        a transfer of money you set aside), or leave one out (for example a reconciliation). This changes only this app, not YNAB. Last 120 days.
+      </p>
+      <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search payee, account, or category" aria-label="Search money in" className="mb-2 h-8" dir="auto" />
+      {error && <p className="mb-1 text-xs text-destructive">{error}</p>}
+      {!inflows && !error && <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</p>}
+      {marked.length > 0 && <p className={cn(label, "mt-2")}>Marked by you</p>}
+      {marked.map((i) => (
+        <Row key={i.id} i={i} />
+      ))}
+      {inflows && <p className={cn(label, "mt-3")}>Other money in</p>}
+      {rest.map((i) => (
+        <Row key={i.id} i={i} />
+      ))}
+    </div>
+  );
+}
+
 const LINKS = [
+  { view: "income", text: "Income: count or leave out an entry" },
   { view: "accounts", text: "Bank accounts and logins" },
   { view: "ynab", text: "YNAB import mapping" },
   { view: "reconcile", text: "Reconcile" },
@@ -215,7 +293,7 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
 /** Settings behind the gear: the spending settings, and links to the setup pages. */
 export function SettingsPage({ view, setView }: { view: string; setView: (view: string) => void }) {
   const { data } = useSpending();
-  const page = { accounts: <AccountsPage />, ynab: <YnabPage />, reconcile: <ReconcilePage /> }[view];
+  const page = { income: <IncomeMarks />, accounts: <AccountsPage />, ynab: <YnabPage />, reconcile: <ReconcilePage /> }[view];
   if (page) {
     return (
       <div className="space-y-3">

@@ -8,11 +8,13 @@ import {
   getSpending,
   ignoreSuggestion,
   loadSettings,
+  recentInflows,
   recentPurchases,
   restoreAnomaly,
   restoreSuggestion,
   treatAsRefund,
   saveSettings,
+  setIncomeMark,
   spendingCategoryIds,
 } from "../../engine/safe-spending-service.js";
 import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
@@ -179,6 +181,26 @@ router.get(
   handle(async (req) => {
     loadAppEnv({ override: true });
     return { purchases: await recentPurchases(getYnabToken(), typeof req.query.today === "string" ? req.query.today : undefined) };
+  })
+);
+
+/** Money-in transactions with their marks, for Settings → Income (read-only). `today` is for tests. */
+router.get(
+  "/inflows",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { inflows: await recentInflows(getYnabToken(), typeof req.query.today === "string" ? req.query.today : undefined) };
+  })
+);
+
+/** Marks one money-in entry as income or not income, or clears the mark (null). Local only. */
+router.post(
+  "/income-marks",
+  handle((req) => {
+    const { id, mark } = req.body as { id?: unknown; mark?: unknown };
+    if (typeof id !== "string" || !id) throw new Error("id is required.");
+    if (mark !== null && mark !== "income" && mark !== "not-income") throw new Error('mark must be "income", "not-income", or null.');
+    return setIncomeMark(id, mark);
   })
 );
 

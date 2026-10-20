@@ -54,7 +54,7 @@ export function RefundPicker({ refund, onDone, onCancel }: { refund: TxRef; onDo
             Set the category of <span dir="auto">“{refund.payee || "No payee"}”</span> to <span className="font-medium">{picked.category}</span>, as a refund of{" "}
             <span dir="auto">{picked.payee}</span> ({formatDate(picked.date)}, {shekels(-picked.amount)}).
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">This writes the category to YNAB. It then counts as a refund, not as income.</p>
+          <p className="mt-1 text-xs text-muted-foreground">This writes the category to YNAB; if the entry is in Ready to Assign, it leaves Ready to Assign. It then counts as a refund, not as income.</p>
           <div className="mt-2 flex gap-2">
             <Button size="sm" onClick={() => void confirm()} disabled={busy}>
               {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Treat as refund

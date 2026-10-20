@@ -10,7 +10,7 @@ import { TransactionTable } from "@/components/TransactionTable";
 import { SkippedList } from "@/components/SkippedList";
 import { exportCSV, openPath, getAccounts, getRuns, type AccountInfo, type RunSummary } from "@/api/client";
 import { useScrapeRun, STORAGE_KEYS, readStoredJson, writeStoredJson, removeStored, type ExportResult, type CopyStatus } from "@/lib/scrape-run";
-import { accountKind, accountStep, daysBackTo, fromDate, lastUpdates } from "@/lib/scrape-view";
+import { accountKind, accountStep, daysBackTo, fromDate, lastLine, lastUpdates } from "@/lib/scrape-view";
 import { formatDate } from "@/lib/spending";
 import { card, label, link, row } from "@/lib/rows";
 import { cn } from "@/lib/utils";
@@ -67,6 +67,7 @@ export function ScrapePage({ openInbox, openHistory }: { openInbox?: () => void;
   const [showOptions, setShowOptions] = useState(false);
   const [shown, setShown] = useState<"" | "tx" | "log">("");
   const [openRun, setOpenRun] = useState("");
+  const [liveLog, setLiveLog] = useState(false);
 
   const [exportResult, setExportResult] = useState<ExportResult | null>(() => readStoredJson<ExportResult | null>(STORAGE_KEYS.exportResult, null));
   const [exporting, setExporting] = useState(false);
@@ -204,9 +205,17 @@ export function ScrapePage({ openInbox, openHistory }: { openInbox?: () => void;
       }
       if (running) {
         const step = status.status === "pending" ? "Waiting" : accountStep(entries, a.name);
+        const line = step === "Waiting" ? "" : lastLine(entries, a.name);
         return (
-          <span className={cn("flex items-center gap-1 text-[13px]", step === "Waiting" ? "text-muted-foreground" : "text-sky-700 dark:text-sky-400")}>
-            {step !== "Waiting" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {step}
+          <span className="min-w-0 text-right text-[13px]">
+            <span className={cn("flex items-center justify-end gap-1", step === "Waiting" ? "text-muted-foreground" : "text-sky-700 dark:text-sky-400")}>
+              {step !== "Waiting" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {step}
+            </span>
+            {line && (
+              <span className="block max-w-64 truncate font-mono text-[11px] text-muted-foreground" title={line}>
+                {line}
+              </span>
+            )}
           </span>
         );
       }
@@ -288,6 +297,19 @@ export function ScrapePage({ openInbox, openHistory }: { openInbox?: () => void;
             {showOptions ? "Hide" : "Options"}
           </button>
         </div>
+
+        {running && (
+          <div className="mt-2">
+            <button type="button" className={link} onClick={() => setLiveLog((v) => !v)} aria-expanded={liveLog}>
+              {liveLog ? "Hide the log" : "Show the full log"}
+            </button>
+            {liveLog && entries.length > 0 && (
+              <div className="mt-1.5">
+                <ScrapeLogs entries={entries} />
+              </div>
+            )}
+          </div>
+        )}
 
         {showOptions && (
           <div className="mt-2.5">

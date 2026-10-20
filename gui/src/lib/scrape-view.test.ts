@@ -34,15 +34,19 @@ describe("scrape view helpers", () => {
     expect(fromDate(updates, ["Never"])).toBeNull();
   });
 
-  it("reads the live step of an account from the progress messages", () => {
-    const entries = [
-      { text: "\nScraping Leumi...", account: "Leumi" },
-      { text: "  [Leumi] LOGGING_IN", account: "Leumi" },
-    ];
-    expect(accountStep(entries, "Leumi")).toBe("Logging in");
-    expect(accountStep([...entries, { text: "  [Leumi] LOGIN_SUCCESS", account: "Leumi" }], "Leumi")).toBe("Reading transactions");
-    expect(accountStep([...entries, { text: "  Total: 14 transactions from Leumi", account: "Leumi" }], "Leumi")).toBe("Found 14");
-    expect(accountStep(entries, "Max")).toBe("Waiting");
+  it("reads the live step of an account in the order the scraper sends its events", () => {
+    const step = (...texts: string[]) => accountStep(texts.map((text) => ({ text, account: "Leumi" })), "Leumi");
+    expect(accountStep([], "Leumi")).toBe("Waiting");
+    expect(step("\nScraping Leumi...")).toBe("Starting");
+    expect(step("\nScraping Leumi...", "  [Leumi] START_SCRAPING", "  [Leumi] INITIALIZING")).toBe("Opening the bank site");
+    expect(step("  [Leumi] LOGGING_IN")).toBe("Logging in");
+    expect(step("  [Leumi] LOGIN_SUCCESS")).toBe("Logged in · reading transactions");
+    expect(step("  [Leumi] LOGIN_FAILED")).toBe("Login failed");
+    expect(step("  [Leumi] CHANGE_PASSWORD")).toBe("The bank asks for a new password");
+    expect(step("  [Leumi] TERMINATING")).toBe("Closing the bank site");
+    expect(step("  Temporary error scraping Leumi. Retrying in 3 seconds...")).toBe("Temporary error · trying again");
+    expect(step("  Found 9 transactions in account 123", "  Found 5 transactions in account 456")).toBe("Found 14 so far");
+    expect(step("  Found 9 transactions in account 123", "  Total: 14 transactions from Leumi")).toBe("Found 14");
   });
 
   it("calls card companies cards and the rest banks", () => {

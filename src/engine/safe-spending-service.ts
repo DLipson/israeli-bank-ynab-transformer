@@ -23,7 +23,7 @@ import {
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
-import { spentVsIncomeFor, withRefundLinks } from "./spent-vs-income.js";
+import { applyIncomeMarks, spentVsIncomeFor, withRefundLinks, type IncomeMark } from "./spent-vs-income.js";
 import { categoryComparisons, whatPushedOver } from "./category-comparisons.js";
 import { cardGroups, watchItems } from "./cards.js";
 import { detectAnomalies } from "./anomalies.js";
@@ -94,12 +94,14 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const cards = cardGroups(snapshot);
   const ynab = leftYnab(snapshot);
   const end = periodEndDate(today, settings.payday);
-  const items = spendItems(transactions);
+  // The user's income marks change only the income and spending lists, not balances or cards.
+  const flowTransactions = applyIncomeMarks(transactions, settings.incomeMarks);
+  const items = spendItems(flowTransactions);
   const asOf = dataAsOf(transactions, today);
   const spendBaseline = baseline(items, asOf, settings.baselineMonths);
   const comparisons = categoryComparisons({
     items,
-    transactions,
+    transactions: flowTransactions,
     today,
     asOf,
     months: settings.baselineMonths,
@@ -108,11 +110,11 @@ export async function getSpending(token: string, today = new Date().toISOString(
   });
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
-  const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
+  const monthlyFlow = monthlyFlowFor(flowTransactions, items, month.categories, today, month.activity ?? null);
   const spentVsIncome = withRefundLinks(
-    { ...spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today), reasons: whatPushedOver(comparisons) },
+    { ...spentVsIncomeFor(flowTransactions, items, month.categories, accounts, monthlyFlow, today), reasons: whatPushedOver(comparisons) },
     settings.refundLinks,
-    transactions
+    flowTransactions
   );
   return {
     today,
@@ -138,7 +140,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
     monthFlow: (m: string) => {
       const [y, mo] = m.split("-").map(Number);
       const lastDay = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
-      const flow = monthlyFlowFor(transactions, items, month.categories, lastDay);
+      const flow = monthlyFlowFor(flowTransactions, items, month.categories, lastDay);
       return { month: m, income: flow.income, spent: flow.expenses };
     },
     /** Spending in a month in the categories that are fixed today. */
@@ -261,12 +263,47 @@ export async function treatAsRefund(token: string, refundTxId: string, purchaseT
   const transactions = await getAllTransactions(token, loadYnabImportConfig().budgetId);
   const refund = transactions.find((t) => t.id === refundTxId);
   const purchase = transactions.find((t) => t.id === purchaseTxId);
-  if (!refund || refund.deleted || refund.amount <= 0 || refund.transfer_account_id || refund.subtransactions?.length || !isUncategorized(refund)) {
-    throw new Error("Only an uncategorized money-in transaction can be treated as a refund.");
+  const counted = refund && (isUncategorized(refund) || refund.category_name === "Inflow: Ready to Assign");
+  if (!refund || refund.deleted || refund.amount <= 0 || refund.transfer_account_id || refund.subtransactions?.length || !counted) {
+    throw new Error("Only a money-in transaction that counts as income (uncategorized or Ready to Assign) can be treated as a refund.");
   }
   if (!purchase || !pickablePurchase(purchase)) throw new Error("Pick a purchase with one category.");
   await setCategory(token, refund.id, purchase.category_id!);
   const settings = loadSettings();
   settings.refundLinks = [...settings.refundLinks.filter((l) => l.refundTxId !== refund.id), { refundTxId: refund.id, purchaseTxId: purchase.id }];
+  delete settings.incomeMarks[refund.id];
   saveSettings(settings);
+}
+
+// --- Income marks ---
+
+const INFLOW_DAYS = 120;
+
+/** Sets or clears (mark null) the user's mark on one money-in transaction. Local only. */
+export function setIncomeMark(id: string, mark: IncomeMark | null): Settings {
+  const settings = loadSettings();
+  if (mark) settings.incomeMarks[id] = mark;
+  else delete settings.incomeMarks[id];
+  saveSettings(settings);
+  return settings;
+}
+
+/** Money-in transactions of the last 120 days, newest first, transfers included, with their mark. Read-only. */
+export async function recentInflows(token: string, today = new Date().toISOString().slice(0, 10)) {
+  const from = new Date(Date.parse(`${today}T00:00:00Z`) - INFLOW_DAYS * 86400000).toISOString().slice(0, 10);
+  const marks = loadSettings().incomeMarks;
+  const transactions = await getAllTransactions(token, loadYnabImportConfig().budgetId);
+  return transactions
+    .filter((t) => !t.deleted && t.amount > 0 && t.date >= from && t.date <= today)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((t) => ({
+      id: t.id,
+      date: t.date,
+      payee: t.payee_name ?? "",
+      account: t.account_name,
+      category: t.category_name,
+      transfer: Boolean(t.transfer_account_id),
+      amount: t.amount,
+      mark: marks[t.id] ?? null,
+    }));
 }

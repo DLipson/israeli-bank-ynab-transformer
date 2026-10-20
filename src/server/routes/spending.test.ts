@@ -18,6 +18,8 @@ const cached = [
   { id: "back", date: "2026-10-08", amount: 300_000, payee_name: "Shoe shop", category_id: null, category_name: null, account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
   { id: "shoes", date: "2026-09-20", amount: -300_000, payee_name: "Shoe shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
   { id: "split", date: "2026-09-21", amount: -100_000, payee_name: "Market", category_id: null, category_name: "Split", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false, subtransactions: [{ amount: -50_000, category_id: "a" }, { amount: -50_000, category_id: "b" }] },
+  { id: "clinic", date: "2026-10-01", amount: 450_000, payee_name: "Clinic", category_id: "rta", category_name: "Inflow: Ready to Assign", account_id: "m", account_name: "Main", transfer_account_id: null, memo: null, deleted: false },
+  { id: "move", date: "2026-10-14", amount: 8_000_000, payee_name: "Transfer : Savings", category_id: null, category_name: null, account_id: "m", account_name: "Main", transfer_account_id: "sav", memo: null, deleted: false },
   { id: "old", date: "2026-05-01", amount: -100_000, payee_name: "Old shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
 ];
 vi.mock("../../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => cached }));
@@ -157,6 +159,31 @@ describe("Treat as refund", () => {
   ])("refuses %s and writes nothing", async (_name, body) => {
     setCategory.mockReset();
     expect((await call("POST", "/refund", body)).status).toBe(400);
+    expect(setCategory).not.toHaveBeenCalled();
+  });
+});
+
+describe("income marks", () => {
+  it("lists money-in transactions with transfers, and saves and clears a mark", async () => {
+    const list = await call("GET", "/inflows?today=2026-10-20");
+    expect((list.json.inflows as Array<{ id: string; transfer: boolean }>).map((i) => [i.id, i.transfer])).toEqual([
+      ["move", true],
+      ["back", false],
+      ["clinic", false],
+    ]);
+    expect((await call("POST", "/income-marks", { id: "move", mark: "income" })).status).toBe(200);
+    expect(saved().incomeMarks).toEqual({ move: "income" });
+    await call("POST", "/income-marks", { id: "move", mark: null });
+    expect(saved().incomeMarks).toEqual({});
+    expect((await call("POST", "/income-marks", { id: "move", mark: "maybe" })).status).toBe(400);
+  });
+
+  it("treats a Ready to Assign entry as a refund too, but not a transfer", async () => {
+    setCategory.mockReset();
+    expect((await call("POST", "/refund", { refundTxId: "clinic", purchaseTxId: "shoes" })).status).toBe(200);
+    expect(setCategory).toHaveBeenCalledWith("token", "clinic", "clothing");
+    setCategory.mockReset();
+    expect((await call("POST", "/refund", { refundTxId: "move", purchaseTxId: "shoes" })).status).toBe(400);
     expect(setCategory).not.toHaveBeenCalled();
   });
 });

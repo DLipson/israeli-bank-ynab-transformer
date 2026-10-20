@@ -97,6 +97,8 @@ export interface Settings {
   createdScheduleIds: string[];
   /** "Treat as refund" links, kept here because YNAB does not link a refund to its purchase. */
   refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
+  /** The user's marks on money-in entries: "not-income" (a reconciliation) or "income" (a transfer to count). */
+  incomeMarks: Record<string, "income" | "not-income">;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -113,6 +115,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dismissedAnomalies: [],
   createdScheduleIds: [],
   refundLinks: [],
+  incomeMarks: {},
 };
 
 /** Convert a saved inclusive end day to the following payday; month-end and day 31 become month-start. */

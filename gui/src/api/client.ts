@@ -326,6 +326,7 @@ export interface SpendingSettings {
   dismissedAnomalies: string[];
   createdScheduleIds: string[];
   refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
+  incomeMarks: Record<string, IncomeMark>;
   /** Old keys: the server no longer returns them. Sent by the old Setup page until phase 11. */
   periodEnd?: "month-end" | number;
   overdraft?: { limitAccountId: string; accountId: string } | null;
@@ -544,6 +545,31 @@ export async function getPurchases(): Promise<Purchase[]> {
 /** YNAB write: the refund gets the purchase's category. Only from the user's click. */
 export async function treatAsRefund(refundTxId: string, purchaseTxId: string): Promise<void> {
   await request("/spending/refund", { method: "POST", body: JSON.stringify({ refundTxId, purchaseTxId }) });
+}
+
+// --- Income marks (local only) ---
+
+/** "not-income": leave a money-in entry out (a reconciliation). "income": count it (a transfer, for example). */
+export type IncomeMark = "income" | "not-income";
+
+export interface Inflow {
+  id: string;
+  date: string;
+  payee: string;
+  account: string;
+  category: string | null;
+  transfer: boolean;
+  amount: number;
+  mark: IncomeMark | null;
+}
+
+/** Money-in transactions of the last 120 days, transfers included. */
+export async function getInflows(): Promise<Inflow[]> {
+  return (await request<{ inflows: Inflow[] }>("/spending/inflows")).inflows;
+}
+
+export async function setIncomeMark(id: string, mark: IncomeMark | null): Promise<void> {
+  await request("/spending/income-marks", { method: "POST", body: JSON.stringify({ id, mark }) });
 }
 
 // --- Inbox Undo ---

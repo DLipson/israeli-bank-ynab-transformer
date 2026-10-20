@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
 import { spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
-import { spentVsIncomeFor, withRefundLinks } from "./spent-vs-income.js";
+import { applyIncomeMarks, spentVsIncomeFor, withRefundLinks } from "./spent-vs-income.js";
 import type { Account, MonthCategory } from "./safe-spending.js";
 
 const K = 1000;
@@ -235,5 +235,21 @@ describe("Treat as refund", () => {
     const transactions = [purchase, back({ category_id: "clothing", category_name: "Clothing" })];
     const result = withRefundLinks(overview(transactions), [{ refundTxId: "back", purchaseTxId: "shoes" }], transactions);
     expect(result.spendingItems.find((t) => t.id === "back")).toMatchObject({ refundOf: { payee: "Shoe shop", date: "2026-09-20" } });
+  });
+});
+
+describe("income marks", () => {
+  const salary = txn({ id: "salary", date: "2026-10-05", amount: 10000 * K, category_id: "rta", category_name: "Inflow: Ready to Assign", payee_name: "Employer" });
+  const reconcile = txn({ id: "reconcile", date: "2026-10-16", amount: 1756 * K, category_id: "rta", category_name: "Inflow: Ready to Assign", payee_name: "Reconciliation Balance Adjustment" });
+  const fromSavings = txn({ id: "maternity", date: "2026-10-14", amount: 8000 * K, category_id: null, category_name: null, transfer_account_id: "savings", payee_name: "Transfer : Savings" });
+  const refundInCategory = txn({ id: "back", date: "2026-10-09", amount: 50 * K, category_id: "groceries", category_name: "Groceries", payee_name: "Shop" });
+  const all = [txn({ id: "food", amount: -1000 * K }), salary, reconcile, fromSavings, refundInCategory];
+
+  it("leaves out an entry marked not income, and counts a marked transfer or categorized entry as income only", () => {
+    expect(overview(all)).toMatchObject({ income: 11756 * K, spent: 950 * K });
+    const marked = applyIncomeMarks(all, { reconcile: "not-income", maternity: "income", back: "income" });
+    const result = overview(marked);
+    expect(result).toMatchObject({ income: 18050 * K, spent: 1000 * K });
+    expect(result.incomeParts.flatMap((p) => p.items.map((i) => i.id)).sort()).toEqual(["back", "maternity", "salary"]);
   });
 });
