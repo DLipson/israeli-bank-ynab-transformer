@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home redesign mockup</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<!--
+  Reference mockup for IMPLEMENTATION-PLAN-home-redesign.md. Open it in a browser.
+  Real numbers from 19-20 Oct 2026: spent 19,796; income 16,340 + 1,756; account and card balances;
+  credit limits and used; coming-month totals; scheduled bills; Clothing/Arnona/Therapy amounts.
+  SAMPLE numbers (made up, only to show the layout): everyday-essential amounts per category,
+  card purchase lists, installment plans and their split, inbox items' evidence, scrape run steps,
+  transaction counts, and past-run results.
+  The app uses its own components (shadcn + Tailwind). Copy the layout, the behavior, and the
+  wording, not this CSS.
+-->
+<style>
+:root{
+  --surface-0:#f5f4ef;--surface-1:#faf9f5;--surface-2:#ffffff;
+  --border:rgba(0,0,0,.12);--border-strong:rgba(0,0,0,.22);
+  --text-primary:#1f1e1d;--text-secondary:#5f5e5a;--text-muted:#8a8984;
+  --text-accent:#185fa5;--text-danger:#a32d2d;--text-success:#3b6d11;--text-warning:#854f0b;
+  --bg-accent:#e6f1fb;--bg-danger:#fcebeb;--bg-success:#eaf3de;--bg-warning:#faeeda;
+  --fill-danger:#e24b4a;--fill-warning:#ef9f27;--fill-success:#639922;
+  --radius:8px;--font-mono:ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --surface-0:#1a1a19;--surface-1:#232322;--surface-2:#2b2b2a;
+  --border:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.24);
+  --text-primary:#f1efe8;--text-secondary:#b4b2a9;--text-muted:#888780;
+  --text-accent:#85b7eb;--text-danger:#f09595;--text-success:#97c459;--text-warning:#fac775;
+  --bg-accent:#0c447c;--bg-danger:#791f1f;--bg-success:#27500a;--bg-warning:#633806;
+}}
+body{margin:0;background:var(--surface-0);color:var(--text-primary);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:680px;margin:0 auto;padding:24px 16px}
+button{font:inherit;font-size:14px;color:var(--text-primary);background:transparent;border:.5px solid var(--border-strong);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+button:hover{background:var(--surface-1)}
+input,select{font:inherit;font-size:14px;color:var(--text-primary);background:var(--surface-2);border:.5px solid var(--border-strong);border-radius:var(--radius);padding:2px 6px}
+.wrap{background:var(--surface-1);border-radius:12px;padding:1rem}
+.nav{display:flex;gap:2px;align-items:center;margin-bottom:1rem;flex-wrap:wrap}
+.nav button{border:none;background:transparent;padding:6px 10px;color:var(--text-secondary)}
+.nav button.on{background:var(--surface-2);color:var(--text-primary);font-weight:500}
+.card{background:var(--surface-2);border:.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:12px}
+.lbl{font-size:13px;color:var(--text-secondary);margin:0}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;padding:6px 0;border-top:.5px solid var(--border)}
+.ex{cursor:pointer}.ex:hover{background:var(--surface-1)}
+.sub{padding-left:16px}
+.chip{font-size:12px;padding:3px 10px;border-radius:var(--radius);border:none;cursor:pointer}
+.link{background:none;border:none;color:var(--text-accent);font-size:13px;padding:0;cursor:pointer}
+.link:hover{background:none;text-decoration:underline}
+.mut{color:var(--text-muted);font-size:12px}
+.note{font-size:12px;color:var(--text-muted);margin:0 0 12px}
+</style>
+</head>
+<body>
+<main>
+<p class="note">Reference mockup. Rows with an arrow open their details. Some numbers are samples: see the comment at the top of the file.</p>
+<div class="wrap">
+<div class="nav" id="nav"></div>
+<div id="screen" style="min-height:240px"></div>
+</div>
+</main>
+<script>
+const f=n=>(n<0?"−":"")+"₪"+Math.abs(Math.round(n)).toLocaleString("en-US");
+const S={tab:"home",open:new Set(),ess:{Groceries:3900,Fuel:900,Pharmacy:300,Transport:821},buf:0,editBuf:false,warn:1000,payday:"31",inboxI:0,hist:[],scrape:{state:"idle",runAt:"15 Oct",step:{},fail:null},opts:false};
+const tog=k=>{S.open.has(k)?S.open.delete(k):S.open.add(k);draw()};
+const chev=k=>`<i class="ti ti-chevron-${S.open.has(k)?"down":"right"}" style="color:var(--text-muted)" aria-hidden="true"></i>`;
+function ex(k,label,amt,inner,cls){return `<div class="row ex ${cls||""}" onclick="tog('${k}')"><span>${chev(k)} ${label}</span><span>${amt}</span></div>`+(S.open.has(k)?`<div class="sub" style="margin-bottom:4px">${inner()}</div>`:"")}
+const line=(l,a,dir)=>`<div class="row"><span style="color:var(--text-secondary)" ${dir?'dir="auto"':""}>${l}</span><span>${a}</span></div>`;
+const groups=[
+{n:"Isracard 7061 + 6460",l:8000,bal:4489,newItems:[["שופרסל דיל","2 Oct",612],["פז יוניברסל","9 Oct",280],["Amazon","11 Oct",455]],more:31,
+ plans:[["IKEA",450,5,"7 of 12"],["KSP",380,2,"8 of 10"],["Golf",154,1,"2 of 3"],["Fox",166,0,"2 of 2, last"]]},
+{n:"Cal 8400",l:5000,bal:2200,newItems:[["רמי לוי","5 Oct",388],["Super-Pharm","8 Oct",142]],more:11,
+ plans:[["Ace",300,6,"3 of 9"],["מחסני חשמל",369,3,"9 of 12"]]}];
+groups.forEach(g=>{g.old=g.plans.reduce((s,p)=>s+p[1],0);g.nw=g.bal-g.old;g.fut=g.plans.reduce((s,p)=>s+p[1]*p[2],0);g.u=g.bal+g.fut});
+const months=["Dec","Jan","Feb","Mar","Apr","May"];
+const inst=i=>groups.reduce((s,g)=>s+g.plans.filter(p=>p[2]>i).reduce((t,p)=>t+p[1],0),0);
+const sched=[["איחוד הצלה- הו\"ק","20 Oct",30],["איחוד הצלה- הו\"ק","20 Oct",30],["בזק הוראות קבע","25 Oct",53],["בזק הוראות קבע","25 Oct",53],["גולן טלקום","29 Oct",54],["חברת פרטנר תקשורת","30 Oct",95],["חברת פרטנר תקשורת","30 Oct",95],["דמי כרטיס","30 Oct",16],["דמי כרטיס","30 Oct",16]];
+const queue=[
+{k:"Unusual",t:"Possible duplicate",p:"להיות ולהצליח",a:250,d:"2 charges of ₪250 on 2 Oct",b:["Looks right","Check it"]},
+{k:"Unusual",t:"New payee",p:"SARA BAILA",a:1000,d:"First payment to this payee",b:["Looks right","Check it"]},
+{k:"Unusual",t:"New payee",p:"קלאס",a:350,d:"First payment to this payee",b:["Looks right","Check it"]},
+{k:"Unusual",t:"Unusually large for its category",p:"לידר",a:363,d:"Larger than the usual charge here",b:["Looks right","Check it"]},
+{k:"Categorize",t:"Suggested: Groceries",p:"שופרסל דיל",a:612,d:"You used Groceries for this payee 38 times",b:["Accept","Choose another"]},
+{k:"Categorize",t:"Suggested: Fuel",p:"פז יוניברסל",a:280,d:"You used Fuel for this payee 22 times",b:["Accept","Choose another"]},
+{k:"Schedule",t:"Repeats every month on the 14th",p:"HOT מובייל",a:89,d:"Seen in 6 of the last 6 months",b:["Add schedule","Not a bill"]}];
+const accts=[{n:"Leumi",type:"Bank",found:14},{n:"Max",type:"Card",found:4},{n:"Visa Cal",type:"Card",found:13},{n:"Isracard",type:"Card",found:16},{n:"Isracard YS",type:"Card",found:7}];
+const state=g=>{const h=g.l-g.u;return h<0?"over":h<S.warn?"low":"ok"};
+const col={over:["var(--text-danger)","var(--fill-danger)"],low:["var(--text-warning)","var(--fill-warning)"],ok:["var(--text-primary)","var(--text-secondary)"]};
+function nav(){const sc=S.scrape.state;
+const chip=sc=="running"?`<button class="chip" style="background:var(--bg-accent);color:var(--text-accent)" onclick="S.tab='scrape';draw()"><i class="ti ti-loader-2" aria-hidden="true"></i> Updating ${Object.values(S.scrape.step).filter(x=>x>=4).length} of 5</button>`
+:sc=="done"?`<button class="chip" style="background:${S.scrape.fail?"var(--bg-danger)":"var(--bg-success)"};color:${S.scrape.fail?"var(--text-danger)":"var(--text-success)"}" onclick="S.tab='scrape';draw()"><i class="ti ti-${S.scrape.fail?"alert-triangle":"check"}" aria-hidden="true"></i> ${S.scrape.fail?S.scrape.fail+" failed":"Updated just now"}</button>`
+:`<button class="chip" style="background:var(--bg-warning);color:var(--text-warning)" onclick="runScrape()"><i class="ti ti-refresh" aria-hidden="true"></i> Updated 4 days ago</button>`;
+const left=queue.length-S.inboxI;
+document.getElementById("nav").innerHTML=[["home","Home"],["inbox","Inbox"+(left?" · "+left:"")],["cards","Cards"],["scrape","Scrape"]].map(([k,l])=>`<button class="${S.tab==k?"on":""}" onclick="S.tab='${k}';draw()">${l}</button>`).join("")
++`<span style="flex:1"></span>${chip}<button class="link" aria-label="Settings" style="margin-left:10px;color:${S.tab=="settings"?"var(--text-primary)":"var(--text-secondary)"}" onclick="S.tab='settings';draw()"><i class="ti ti-settings" style="font-size:18px"></i></button>`}
+function home(){
+const spent=19796,inc=18096,over=spent-inc,w=inc/spent*100;
+const essT=Object.values(S.ess).reduce((a,b)=>a+b,0),cards=-6166,bills=sched.reduce((s,x)=>s+x[2],0);
+const avail=1615+cards-bills-essT-S.buf;
+const bufCell=S.editBuf?`<span onclick="event.stopPropagation()">−₪<input type="number" step="100" min="0" value="${S.buf}" style="width:90px;height:28px" onchange="S.buf=Math.max(0,+this.value||0);S.editBuf=false;draw()"></span>`
+:`<button class="link" style="color:var(--text-primary);font-size:14px" onclick="S.editBuf=true;draw()">${f(-S.buf)} <i class="ti ti-pencil" style="color:var(--text-muted)" aria-hidden="true"></i></button>`;
+const watch=groups.filter(g=>state(g)!="ok");
+return `<div class="card">
+<p class="lbl">October · spent vs income counted</p>
+<p style="font-size:28px;font-weight:500;margin:4px 0 2px">${f(spent)} <span style="font-size:16px;color:var(--text-secondary);font-weight:400">of ${f(inc)}</span></p>
+<div onclick="tog('bar')" style="cursor:pointer;margin:10px 0 6px;display:flex;height:14px;border-radius:var(--radius);overflow:hidden;background:var(--surface-1)">
+<div style="width:${w}%;background:var(--text-secondary)"></div><div style="width:${100-w}%;background:var(--fill-danger)"></div></div>
+<p style="font-size:14px;color:var(--text-danger);margin:0">${f(over)} more than you earned · 11 days left</p>
+${S.open.has("bar")?`<div style="margin-top:12px">
+<p class="lbl" style="margin-bottom:4px">Income counted</p>
+${ex("inc1","Salary, 24–30 Sept (counts toward October)",f(16340),()=>line("משכורת · 28 Sept",f(16340),1))}
+${ex("inc2","Received in October",f(1756),()=>line("ביטוח לאומי · 20 Oct",f(1756),1))}
+<p class="lbl" style="margin:12px 0 4px">What pushed you over</p>
+${ex("c1",'Clothing <span class="mut">· occasional</span>',f(829)+' <span class="mut">vs '+f(82)+' avg</span>',()=>line("H&M · 6 Oct",f(529),1)+line("Fox · 12 Oct",f(300),1))}
+${ex("c2",'Arnona <span class="mut">· fixed</span>',f(1047)+' <span class="mut">vs '+f(788)+'</span>',()=>line("עיריית ירושלים · 1 Oct",f(1047),1))}
+${ex("c3",'Therapy <span class="mut">· occasional</span>',f(500)+' <span class="mut">vs '+f(250)+' avg</span>',()=>line("Session · 3 Oct",f(250))+line("Session · 17 Oct",f(250)))}
+${ex("c4","Not categorized yet",f(2947),()=>`<div class="row"><span class="lbl">21 transactions</span><button class="link" onclick="S.tab='inbox';S.inboxI=4;draw()">Categorize in Inbox</button></div>`)}
+</div>`:`<button class="link" style="margin-top:8px" onclick="tog('bar')">See income and spending</button>`}
+<div style="margin-top:8px"><button class="link">Last month's report</button></div>
+</div>
+<div class="card">
+<p class="lbl">Money available until payday (${S.payday=="31"?"31 Oct":S.payday+" Nov"})</p>
+<p style="font-size:22px;font-weight:500;margin:4px 0 8px;color:${avail<0?"var(--text-danger)":"var(--text-primary)"}">${f(avail)}</p>
+${ex("a1","Cash",f(1615),()=>line("Main Account",f(-24385))+line("Second Account",f(0))+line("Credit Limit",f(26000)))}
+${ex("a2","Card charges, already spent",f(cards),()=>line("7061 - Isracard",f(-3254))+line("8400 - Cal",f(-2200))+line("Isracard YS - 6460",f(-1235))+line("6859 - Max (refund)",f(523)))}
+${ex("a3","Bills still to come",f(-bills),()=>sched.map(x=>line(x[0]+" · "+x[1],f(-x[2]),1)).join(""))}
+${ex("a4","Everyday essentials still to come",f(-essT),()=>Object.entries(S.ess).map(([c,v])=>`<div class="row"><span style="color:var(--text-secondary)">${c} <span class="mut">assigned − spent</span></span><span>−₪<input type="number" step="50" min="0" value="${v}" style="width:80px;height:28px" onclick="event.stopPropagation()" onchange="S.ess['${c}']=Math.max(0,+this.value||0);draw()"></span></div>`).join("")+`<p class="mut" style="margin:6px 0">Edits apply to this period only.</p>`)}
+<div class="row"><span style="color:var(--text-secondary)">Buffer</span>${bufCell}</div>
+</div>
+${watch.length?`<div class="card" style="padding:.75rem 1.25rem"><p class="lbl" style="margin-bottom:4px">Things to watch</p>
+${watch.map((g,i)=>{const s=state(g);return `<div class="row" ${i?"":'style="border-top:none"'}><span><i class="ti ti-credit-card" style="color:${col[s][0]}" aria-hidden="true"></i> ${g.n}: ${s=="over"?f(g.u-g.l)+" over the limit":"only "+f(g.l-g.u)+" left"}</span><button class="link" onclick="S.tab='cards';S.open.add('g${groups.indexOf(g)}');draw()">Open</button></div>`}).join("")}</div>`:""}`}
+function inbox(){
+const n=queue.length,i=S.inboxI;
+const undo=S.hist.length?`<button class="link" onclick="S.inboxI--;S.hist.pop();draw()"><i class="ti ti-arrow-back-up" aria-hidden="true"></i> Undo: ${S.hist[S.hist.length-1]}</button>`:"";
+if(i>=n)return `<div class="card" style="text-align:center;padding:2rem"><i class="ti ti-circle-check" style="font-size:28px;color:var(--text-success)" aria-hidden="true"></i><p style="font-size:16px;font-weight:500;margin:8px 0 4px">All caught up</p><p class="lbl">${n} items done. New items appear after the next update.</p><div style="margin-top:12px">${undo}</div></div>`;
+const it=queue[i],act=b=>`S.hist.push('${b} · ${it.p.replace(/'/g,"")}');S.inboxI++;draw()`;
+return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:var(--radius)"><div style="width:${i/n*100}%;height:6px;background:var(--fill-success);border-radius:var(--radius)"></div></div><span class="lbl">${i+1} of ${n}</span></div>
+<div class="card" style="padding:1.5rem 1.25rem">
+<p class="lbl"><span style="font-weight:500">${it.k}</span> · ${it.t}</p>
+<p style="font-size:22px;font-weight:500;margin:6px 0 2px" dir="auto">${it.p}</p>
+<p style="font-size:22px;margin:0 0 6px">${f(it.a)}</p>
+<p class="lbl">${it.d}</p>
+<div style="display:flex;gap:8px;margin-top:16px"><button style="flex:1" onclick="${act(it.b[0])}"><i class="ti ti-check" aria-hidden="true"></i> ${it.b[0]}</button><button style="flex:1" onclick="${act(it.b[1])}">${it.b[1]}</button></div>
+</div><div style="min-height:20px">${undo}</div>`}
+function cardsV(){
+return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><p class="lbl">Credit headroom</p><span class="lbl">Orange below ${f(S.warn)} <button class="link" onclick="S.tab='settings';draw()">Change</button></span></div>
+${groups.map((g,gi)=>{const h=g.l-g.u,s=state(g),k="g"+gi,o=S.open.has(k);return `<div style="padding:8px 0;border-top:.5px solid var(--border)">
+<div onclick="tog('${k}')" style="cursor:pointer"><div style="display:flex;justify-content:space-between;font-size:14px"><span>${chev(k)} ${g.n}</span><span style="color:${col[s][0]}">${f(h)} left of ${f(g.l)}</span></div>
+<div style="height:6px;margin-top:6px;background:var(--surface-1);border-radius:var(--radius)"><div style="width:${Math.min(100,g.u/g.l*100)}%;height:6px;border-radius:var(--radius);background:${col[s][1]}"></div></div></div>
+${o?`<div style="margin-top:6px">
+${ex(k+"n","<b style='font-weight:500'>Next payment (2 Nov)</b>",f(g.bal),()=>
+ ex(k+"nw","New purchases",f(g.nw),()=>g.newItems.map(x=>line(x[0]+" · "+x[1],f(x[2]),1)).join("")+`<p class="mut" style="margin:6px 0">+ ${g.more} more</p>`)+
+ ex(k+"od","Installments of older purchases",f(g.old),()=>g.plans.map(p=>line(p[0]+" · payment "+p[3],f(p[1]),1)).join("")))}
+${ex(k+"f","Future installments, by month",f(g.fut),()=>months.map((m,i)=>{const ps=g.plans.filter(p=>p[2]>i);return ps.length?ex(k+"m"+i,m,f(ps.reduce((s,p)=>s+p[1],0)),()=>ps.map(p=>line(p[0]+" · "+(p[2]-i)+" payments left",f(p[1]),1)).join("")):""}).join(""))}
+</div>`:""}</div>`}).join("")}</div>
+<div class="card"><p class="lbl" style="margin-bottom:6px">Coming months · bills and installments</p>
+${[["Dec",8175],["Jan",8033],["Feb",7633],["Mar",7338],["Apr",7338],["May",7338]].map(([m,t],i)=>ex("cm"+i,m,f(t),()=>line("Scheduled bills",f(t-inst(i)))+line("Card installments",f(inst(i))))).join("")}</div>`}
+function scrapeV(){const sc=S.scrape;
+const rowFor=(a)=>{const st=sc.step[a.n]??-1,failed=sc.fail==a.n;
+ const steps=["Logging in","Reading transactions","Found "+a.found,"Sending to YNAB","Done · "+a.found+" new"];
+ const right=sc.state=="idle"?`<span class="lbl">Updated ${sc.runAt} · 4 days</span>`
+ :failed?`<span style="color:var(--text-danger);font-size:13px">Login page did not load</span> <button class="link" onclick="retry('${a.n}')">Retry</button>`
+ :st<0?`<span class="lbl">Waiting</span>`:st>=4?`<span style="color:var(--text-success);font-size:13px"><i class="ti ti-check" aria-hidden="true"></i> ${steps[4]}</span>`:`<span style="color:var(--text-accent);font-size:13px"><i class="ti ti-loader-2" aria-hidden="true"></i> ${steps[st]}</span>`;
+ return `<div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked ${sc.state=="running"?"disabled":""}> ${a.n} <span class="mut">${a.type}</span></label><span>${right}</span></div>`};
+const total=accts.filter(a=>sc.fail!=a.n).reduce((s,a)=>s+a.found,0);
+return `<div class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><p class="lbl">Accounts</p><span class="lbl">From 12 Oct <span class="mut">(last update − 3 days)</span> <button class="link">Change</button></span></div>
+${accts.map(rowFor).join("")}
+<div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+${sc.state=="running"?`<button disabled style="flex:1">Updating…</button><button onclick="S.scrape.state='idle';S.scrape.step={};draw()">Cancel</button>`:`<button style="flex:1" onclick="runScrape()"><i class="ti ti-refresh" aria-hidden="true"></i> Update ${accts.length} accounts</button>`}
+<button class="link" onclick="S.opts=!S.opts;draw()">${S.opts?"Hide":"Options"}</button></div>
+${S.opts?`<div style="margin-top:10px">${["Send to YNAB after scrape","Show browser window","Split CSV by account","Detailed logging"].map((o,i)=>`<div class="row"><label style="display:flex;gap:8px"><input type="checkbox" ${i==0?"checked":""}> ${o}</label></div>`).join("")}
+<div class="row"><span>Accounts at the same time</span><input type="number" value="2" min="1" max="5" style="width:60px;height:28px"></div>
+<div class="row"><span>Output folder</span><span class="mut">~/Documents/bank-exports</span></div></div>`:""}
+</div>
+${sc.state=="done"?`<div class="card"><p style="font-size:16px;font-weight:500;margin:0 0 4px">${total} new transactions · ${total-2} sent to YNAB · 2 already there</p>
+<p class="lbl">${sc.fail?sc.fail+" failed. Retry it above.":"All accounts updated."}</p>
+<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button onclick="S.tab='inbox';S.inboxI=4;draw()">Categorize 12 new</button><button onclick="tog('tx')">See transactions</button><button onclick="tog('log')">Log and CSV</button></div>
+${S.open.has("tx")?`<div style="margin-top:8px">${line("שופרסל דיל · Isracard · 18 Oct",f(-212),1)+line("פז יוניברסל · Cal · 17 Oct",f(-180),1)+line("משכורת · Leumi · 17 Oct",f(250),1)}<p class="mut">+ ${total-3} more</p></div>`:""}
+${S.open.has("log")?`<div style="margin-top:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)">10:02:11 Leumi: logged in<br>10:02:40 Leumi: 14 transactions<br>10:03:05 Max: login page did not load (timeout 30 s)<br>…</div><div style="display:flex;gap:8px;margin-top:8px"><button>Copy log</button><button>Export CSV</button><button>Open output folder</button></div>`:""}
+</div>`:""}
+<div class="card"><p class="lbl" style="margin-bottom:6px">Past updates</p>
+${[["15 Oct","✓✓✓✓✓",54],["12 Oct","✓✗✓✓✓",31],["9 Oct","✓✓✓✓✓",40]].map(([d,r,n],i)=>ex("p"+i,d+' <span class="mut" style="letter-spacing:2px">'+r+'</span>',n+" new",()=>accts.map((a,j)=>line(a.n,r[j]=="✓"?"OK":"Failed: login timeout")).join(""))).join("")}
+</div>`}
+function settingsV(){
+const essAll=["Groceries","Fuel","Pharmacy","Transport","Clothing","Restaurants","Gifts"];
+const set=(label,help,ctl)=>`<div class="row" style="align-items:flex-start"><span>${label}<br><span class="mut">${help}</span></span>${ctl}</div>`;
+return `<div class="card"><p style="font-size:16px;font-weight:500;margin:0 0 8px">Settings</p>
+${set("Payday","“Available until payday” counts until the day before this date.",`<select onchange="S.payday=this.value;draw()">${["31","10","15","28"].map(d=>`<option ${S.payday==d?"selected":""} value="${d}">${d=="31"?"Month end":"Day "+d}</option>`).join("")}</select>`)}
+${set("Buffer","Money that the app never counts as available.",`<span>₪<input type="number" step="100" min="0" value="${S.buf}" style="width:90px" onchange="S.buf=Math.max(0,+this.value||0);draw()"></span>`)}
+${set("Compare with the last … months","“Normal” spending is the median of this many past months.",`<input type="number" value="6" min="3" max="24" style="width:60px">`)}
+${set("Warn when card room is below","A card group turns orange below this amount, and red when it is over its limit.",`<span>₪<input type="number" step="100" min="0" value="${S.warn}" style="width:90px" onchange="S.warn=Math.max(0,+this.value||0);draw()"></span>`)}
+<p class="lbl" style="margin:12px 0 2px">Everyday essentials</p>
+<p class="mut" style="margin:0 0 6px">Categories that you must spend on every week. Only these get a pace and a forecast until payday.</p>
+<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:14px">${essAll.map((c,i)=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${i<4?"checked":""}> ${c}</label>`).join("")}</div>
+<p class="lbl" style="margin:12px 0 4px">More</p>
+${["Card limits","Bank accounts and logins","YNAB import mapping","Reconcile"].map(x=>`<div class="row ex"><span>${x}</span><i class="ti ti-chevron-right" style="color:var(--text-muted)" aria-hidden="true"></i></div>`).join("")}
+</div>`}
+let timer=null;
+function runScrape(){if(S.scrape.state=="running")return;S.tab="scrape";S.scrape={state:"running",runAt:"15 Oct",step:{},fail:null};let t=0;clearInterval(timer);
+timer=setInterval(()=>{t++;accts.forEach((a,i)=>{const st=Math.min(4,t-i);if(st>=0){if(a.n=="Max"&&st>=1){S.scrape.fail="Max";return}S.scrape.step[a.n]=st}});
+if(t>=8){clearInterval(timer);S.scrape.state="done"}draw()},450);draw()}
+function retry(n){S.scrape.fail=null;S.scrape.step[n]=4;draw()}
+function draw(){nav();const v={home,inbox,cards:cardsV,scrape:scrapeV,settings:settingsV}[S.tab];document.getElementById("screen").innerHTML=v()}
+draw();
+</script>
+</body>
+</html>

@@ -4,8 +4,15 @@
  * Fixed payments are YNAB scheduled transactions; the engine also suggests new ones from history.
  * The I/O (YNAB, cache, settings file) is in safe-spending-service.ts.
  */
-import { identityKey, parseBankText, readMemo, type YnabTransaction } from "../ynab/categorize.js";
+import {
+  identityKey,
+  parseBankText,
+  readMemo,
+  readMemoFields,
+  type YnabTransaction,
+} from "../ynab/categorize.js";
 import { expectedRest, predictItems, spendItems } from "./baseline.js";
+import { parseChargeDate } from "./charge-date.js";
 
 export interface Account {
   id: string;
@@ -237,12 +244,7 @@ function median(values: number[]): number {
 }
 
 function memoFields(memo: string | null): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(memo ?? "");
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
+  return readMemoFields(memo) ?? {};
 }
 
 /** True when a scheduled transaction on the account already covers this amount and day. */
@@ -357,7 +359,7 @@ export function installmentPlans(transactions: YnabTransaction[], today: string)
     if (typeof memo.installment !== "string") continue;
     const [paid, total] = memo.installment.split("/").map(Number);
     if (!paid || !total) continue;
-    const lastCharge = typeof memo.chargeDate === "string" ? memo.chargeDate : t.date;
+    const lastCharge = parseChargeDate(t.memo) ?? t.date;
     const key = `${t.account_id}|${t.payee_name}|${memo.originalAmount ?? ""}|${total}`;
     const current = plans.get(key);
     if (current && current.paid >= paid) continue;

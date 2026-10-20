@@ -74,6 +74,18 @@ function readObjectLiteral(text: string): Record<string, string> | null {
   return Object.keys(fields).length ? fields : null;
 }
 
+/** Fields from JSON memos and the older JavaScript object-text format. */
+export function readMemoFields(memo: string | null): Record<string, unknown> | null {
+  const text = memo?.trim() ?? "";
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return text.startsWith("{") ? readObjectLiteral(text) : null;
+  }
+}
+
 /** Bank text, card sector, and any memo typed by hand. Older importers used "notes" or "Secret Text". */
 export function readMemo(memo: string | null): { bankText: string; sector: string; handNote: string } {
   const text = memo?.trim() ?? "";

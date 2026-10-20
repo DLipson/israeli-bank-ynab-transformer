@@ -61,4 +61,22 @@ describe("monthlyFlowFor", () => {
       carryoverTo: "2024-02-29",
     });
   });
+
+  it("moves income from the current month's final seven days to the next month", () => {
+    const transactions = [
+      txn({ date: "2026-10-24", amount: 100 * K, category_name: "Inflow: Ready to Assign" }),
+      txn({ date: "2026-10-28", amount: 200 * K, category_name: "Inflow: Ready to Assign" }),
+    ];
+
+    expect(monthlyFlowFor(transactions, [], [], "2026-10-30")).toMatchObject({
+      income: 100 * K,
+      incomeThisMonth: 100 * K,
+      carriedIncome: 0,
+    });
+    expect(monthlyFlowFor(transactions, [], [], "2026-11-10")).toMatchObject({
+      income: 200 * K,
+      incomeThisMonth: 0,
+      carriedIncome: 200 * K,
+    });
+  });
 });

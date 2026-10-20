@@ -25,6 +25,8 @@ export function monthlyFlowFor(
   const lastDay = new Date(Date.UTC(Number(previous.slice(0, 4)), Number(previous.slice(5, 7)), 0)).getUTCDate();
   const carryoverFrom = `${previous}-${String(Math.max(1, lastDay - 6)).padStart(2, "0")}`;
   const carryoverTo = `${previous}-${String(lastDay).padStart(2, "0")}`;
+  const monthLastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const monthCarryoverFrom = `${month}-${String(Math.max(1, monthLastDay - 6)).padStart(2, "0")}`;
   const incomeCategoryIds = new Set(
     categories.filter((c) => c.category_group_name === "Internal Master Category").map((c) => c.id)
   );
@@ -61,7 +63,7 @@ export function monthlyFlowFor(
       .map((p) => ({ date: t.date, amount: p.amount }));
   });
   const incomeThisMonth = income
-    .filter((i) => i.date.startsWith(month) && i.date <= today)
+    .filter((i) => i.date.startsWith(month) && i.date <= today && i.date < monthCarryoverFrom)
     .reduce((sum, i) => sum + i.amount, 0);
   const carriedIncome = income
     .filter((i) => i.date >= carryoverFrom && i.date <= carryoverTo)

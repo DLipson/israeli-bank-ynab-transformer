@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
+import { parseChargeDate } from "./charge-date.js";
 import {
   creditExposure,
   DEFAULT_SETTINGS,
@@ -74,6 +75,15 @@ function snapshot(o: Partial<Snapshot> = {}): Snapshot {
 }
 
 describe("dates", () => {
+  it("parses charge dates in both memo formats and rejects missing or invalid values", () => {
+    expect(parseChargeDate(JSON.stringify({ chargeDate: "10/06/2025" }))).toBe("2025-06-10");
+    expect(parseChargeDate("{ chargeDate: '10/06/2025' }")).toBe("2025-06-10");
+    expect(parseChargeDate(JSON.stringify({ chargeDate: "2026-11-02" }))).toBe("2026-11-02");
+    expect(parseChargeDate(JSON.stringify({}))).toBeNull();
+    expect(parseChargeDate(JSON.stringify({ chargeDate: "31/02/2025" }))).toBeNull();
+    expect(parseChargeDate("not a memo")).toBeNull();
+  });
+
   it("ends the period at month end or at the next chosen day", () => {
     expect(periodEndDate("2026-10-11", "month-end")).toBe("2026-10-31");
     expect(periodEndDate("2026-10-11", 20)).toBe("2026-10-20");
@@ -155,6 +165,14 @@ describe("installments, credit exposure, and obligations", () => {
     );
     expect(plans).toHaveLength(1);
     expect(plans[0]).toMatchObject({ paid: 2, total: 10, remaining: 8 * 135 * K });
+  });
+
+  it("parses an old-format charge date in an installment memo", () => {
+    const plans = installmentPlans(
+      [txn({ memo: "{ installment: '2/10', chargeDate: '10/06/2025' }" })],
+      "2025-06-15"
+    );
+    expect(plans[0]?.lastCharge).toBe("2025-06-10");
   });
 
   it("groups shared card limits and adds future installments to used credit", () => {
