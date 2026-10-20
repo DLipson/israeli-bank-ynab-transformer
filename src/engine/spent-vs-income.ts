@@ -2,6 +2,7 @@ import { parseBankText, readMemo, type YnabTransaction } from "../ynab/categoriz
 import { normalizedName, pastMonths, similarPayee, type SpendItem } from "./baseline.js";
 import { incomeLines, type MonthlyFlow } from "./monthly-flow.js";
 import type { Account, MonthCategory } from "./safe-spending.js";
+import type { CategoryComparison } from "./category-comparisons.js";
 
 export interface TxRef {
   id: string;
@@ -25,16 +26,7 @@ export interface SpentVsIncome {
   }>;
   spendingItems: TxRef[];
   savedThisMonth: { amount: number; items: TxRef[] };
-  reasons: Array<{
-    categoryId: string;
-    name: string;
-    type: "essential" | "occasional" | "fixed";
-    thisMonth: number;
-    compareTo: number;
-    compareLabel: "normal by this day" | "12-month average" | "normal month";
-    difference: number;
-    items: TxRef[];
-  }>;
+  reasons: CategoryComparison[];
   uncategorized: { amount: number; count: number };
 }
 
@@ -125,7 +117,7 @@ function currentMonthSpending(
   );
 }
 
-function spendingRefs(items: SpendItem[], transactions: YnabTransaction[]): TxRef[] {
+export function spendingRefs(items: SpendItem[], transactions: YnabTransaction[]): TxRef[] {
   const byId = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const lines = items.flatMap((item) => {
     const transaction = item.transactionId ? byId.get(item.transactionId) : undefined;

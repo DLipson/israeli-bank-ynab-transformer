@@ -24,6 +24,7 @@ import {
 import { baseline, pastMonths, spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
 import { spentVsIncomeFor } from "./spent-vs-income.js";
+import { categoryComparisons, whatPushedOver } from "./category-comparisons.js";
 import { detectAnomalies } from "./anomalies.js";
 import { isUncategorized } from "../ynab/categorize.js";
 
@@ -79,12 +80,25 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const ynab = leftYnab(snapshot);
   const end = periodEndDate(today, settings.payday);
   const items = spendItems(transactions);
-  const spendBaseline = baseline(items, dataAsOf(transactions, today), settings.baselineMonths);
+  const asOf = dataAsOf(transactions, today);
+  const spendBaseline = baseline(items, asOf, settings.baselineMonths);
+  const comparisons = categoryComparisons({
+    items,
+    transactions,
+    today,
+    asOf,
+    months: settings.baselineMonths,
+    essentialCategoryIds: settings.essentialCategoryIds,
+    scheduled,
+  });
   const previous = pastMonths(today, 1)[0];
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
   const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
-  const spentVsIncome = spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today);
+  const spentVsIncome = {
+    ...spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today),
+    reasons: whatPushedOver(comparisons),
+  };
   return {
     today,
     lastScrapedAt,

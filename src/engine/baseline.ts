@@ -219,7 +219,7 @@ function paceStatus(thisMonth: number, normalByToday: number): { difference: num
  * A category that is one payment a month (rent, a loan): pace makes no sense, so it is "paid" or
  * "due". Fixed = in most past months the total is within 10% of the median, from at most 2 payments.
  */
-function isFixed(items: SpendItem[], months: string[]): boolean {
+export function isFixed(items: SpendItem[], months: string[]): boolean {
   const normal = median(months.map((m) => sumDays(items, m, 0, 31)));
   if (normal <= 0) return false;
   const steady = months.filter((m) => {
