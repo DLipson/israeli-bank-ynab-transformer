@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { ScrapePage } from "@/pages/ScrapePage";
@@ -7,11 +8,22 @@ import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
-import { AnomaliesPanel, ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
+import {
+  AnomaliesPanel,
+  Exposure,
+  Obligations,
+  ReportsPanel,
+  SchedulesPanel,
+  SpendingLoading,
+  SpendingProvider,
+  SpendingSettingsPanel,
+} from "@/pages/SpendingPage";
 import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
+import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
+import { cn } from "@/lib/utils";
 
-/** A second row of tabs inside a top tab (e.g. Review: Categorize | Schedules). */
+/** A second row of tabs inside a top tab (e.g. Scrape: Scrape | Past runs). */
 function SubTabs({
   value,
   onChange,
@@ -43,36 +55,76 @@ function Count({ n }: { n: number }) {
   return n > 0 ? <span className="rounded-full bg-amber-100 px-1.5 text-[11px] leading-4 text-amber-800">{n}</span> : null;
 }
 
+/** Cards until phase 9: the existing credit and coming-months panels. */
+function CardsTab() {
+  const { data } = useSpending();
+  if (!data) return <SpendingLoading />;
+  return (
+    <div className="space-y-4">
+      <Exposure data={data} />
+      <Obligations data={data} />
+    </div>
+  );
+}
+
+/** Old tab names that pages still pass to navigate(). */
+const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
+
 function Shell() {
   const { data } = useSpending();
   const [tab, setTab] = useState("home");
-  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", review: "categorize", setup: "accounts" });
+  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", inbox: "categorize", settings: "spending" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
   const navigate = (t: string, v?: string) => {
-    if (v) setView(t)(v);
-    setTab(t);
+    const target = OLD_TABS[t] ?? t;
+    if (v) setView(target)(v);
+    setTab(target);
   };
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
   const unusual = data?.anomalies.length ?? 0;
+  const inboxLeft = schedules + uncategorized + unusual;
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <h1 className="mb-4 text-2xl font-bold">Israeli Bank YNAB</h1>
-
+    <div className="mx-auto max-w-[680px] px-4 py-6">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="home">Home</TabsTrigger>
-          <TabsTrigger value="scrape">Scrape</TabsTrigger>
-          <TabsTrigger value="review" className="gap-1.5">
-            Review <Count n={schedules + uncategorized + unusual} />
-          </TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-          <TabsTrigger value="setup">Setup</TabsTrigger>
-        </TabsList>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <TabsList>
+            <TabsTrigger value="home">Home</TabsTrigger>
+            <TabsTrigger value="inbox">Inbox{inboxLeft > 0 && ` · ${inboxLeft}`}</TabsTrigger>
+            <TabsTrigger value="cards">Cards</TabsTrigger>
+            <TabsTrigger value="scrape">Scrape</TabsTrigger>
+          </TabsList>
+          <span className="flex-1" />
+          <UpdateChip openScrape={() => navigate("scrape", "scrape")} />
+          <button
+            type="button"
+            aria-label="Settings"
+            onClick={() => setTab("settings")}
+            className={cn("rounded-md p-1.5 hover:bg-muted", tab === "settings" ? "text-foreground" : "text-muted-foreground")}
+          >
+            <Settings className="h-[18px] w-[18px]" />
+          </button>
+        </div>
 
         <TabsContent value="home">
           <HomePage navigate={navigate} />
+        </TabsContent>
+
+        <TabsContent value="inbox">
+          <SubTabs
+            value={views.inbox}
+            onChange={setView("inbox")}
+            items={[
+              { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
+              { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
+              { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="cards">
+          <CardsTab />
         </TabsContent>
 
         <TabsContent value="scrape">
@@ -86,33 +138,23 @@ function Shell() {
           />
         </TabsContent>
 
-        <TabsContent value="review">
+        <TabsContent value="settings">
           <SubTabs
-            value={views.review}
-            onChange={setView("review")}
+            value={views.settings}
+            onChange={setView("settings")}
             items={[
-              { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
-              { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
-              { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
+              { value: "spending", label: "Spending settings", content: <SpendingSettingsPanel /> },
+              { value: "accounts", label: "Bank accounts", content: <AccountsPage /> },
+              { value: "ynab", label: "YNAB import", content: <YnabPage /> },
               { value: "reconcile", label: "Reconcile", content: <ReconcilePage /> },
+              // ponytail: until Home gets its report link (phase 7), reports stay reachable here.
+              { value: "reports", label: "Reports", content: <ReportsPanel /> },
             ]}
           />
         </TabsContent>
 
         <TabsContent value="reports">
           <ReportsPanel />
-        </TabsContent>
-
-        <TabsContent value="setup">
-          <SubTabs
-            value={views.setup}
-            onChange={setView("setup")}
-            items={[
-              { value: "accounts", label: "Bank accounts", content: <AccountsPage /> },
-              { value: "ynab", label: "YNAB import", content: <YnabPage /> },
-              { value: "spending", label: "Spending settings", content: <SpendingSettingsPanel /> },
-            ]}
-          />
         </TabsContent>
       </Tabs>
     </div>
