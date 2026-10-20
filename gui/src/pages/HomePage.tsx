@@ -193,7 +193,7 @@ function AvailableCard({ data, navigate }: { data: SpendingData; navigate: Navig
     setError("");
     try {
       await saveSpendingSettings(patch);
-      reload();
+      reload({ quick: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
     }
@@ -233,7 +233,7 @@ function AvailableCard({ data, navigate }: { data: SpendingData; navigate: Navig
             <div key="essentials" className={row}>
               <span className="text-muted-foreground">{LINE_LABEL.essentials}</span>
               <span className="flex items-center gap-3">
-                <button type="button" className="text-[13px] text-sky-700 hover:underline dark:text-sky-400" onClick={() => navigate("settings", "spending")}>
+                <button type="button" className="text-[13px] text-sky-700 hover:underline dark:text-sky-400" onClick={() => navigate("settings", "main")}>
                   Choose your everyday essentials
                 </button>
                 {shekels(0)}

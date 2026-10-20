@@ -33,7 +33,8 @@ export interface SpendingState {
   data: SpendingData | null;
   loading: boolean;
   error: string;
-  reload: () => void;
+  /** quick: only the settings changed, so the server reuses its last YNAB read. */
+  reload: (options?: { quick?: boolean }) => void;
   removeSuggestion: (id: string) => void;
 }
 

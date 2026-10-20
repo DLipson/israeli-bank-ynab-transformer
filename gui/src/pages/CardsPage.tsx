@@ -98,7 +98,7 @@ export function CardsPage({ navigate, openGroup }: { navigate: Navigate; openGro
           <p className={label}>Credit headroom</p>
           <span className={label}>
             Orange below {shekels(data.settings.cardWarningLevel)}{" "}
-            <button type="button" className={link} onClick={() => navigate("settings", "spending")}>
+            <button type="button" className={link} onClick={() => navigate("settings", "main")}>
               Change
             </button>
           </span>

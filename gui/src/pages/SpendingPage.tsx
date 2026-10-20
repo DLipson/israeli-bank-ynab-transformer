@@ -1,21 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   generateReport,
   getReports,
   getSpending,
-  saveSpendingSettings,
-  type CategoryOption,
-  type CreditLimitGroup,
   type Report,
   type ReportType,
   type SpendingData,
 } from "@/api/client";
-import { formatDate, K, monthLabel, SpendingContext, useSpending } from "@/lib/spending";
+import { formatDate, monthLabel, SpendingContext, useSpending } from "@/lib/spending";
 import { readStoredJson, writeStoredJson } from "@/lib/scrape-run";
 
 const REPORT_INFO: Record<ReportType, { name: string; when: string }> = {
@@ -195,211 +191,6 @@ export function ReportsPanel() {
   );
 }
 
-function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => void }) {
-  const s = data.settings;
-  const [periodEnd, setPeriodEnd] = useState(s.periodEnd === "month-end" ? "" : String(s.periodEnd));
-  const [buffer, setBuffer] = useState(String(Math.round(s.buffer / K)));
-  const [months, setMonths] = useState(String(s.baselineMonths));
-  const [subtract, setSubtract] = useState(s.subtractExpected);
-  const [overdraft, setOverdraft] = useState(s.overdraft ?? { limitAccountId: "", accountId: "" });
-  const [groups, setGroups] = useState<CreditLimitGroup[]>(s.creditLimits);
-  const [flexible, setFlexible] = useState<Set<string>>(new Set(s.flexibleCategoryIds));
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const checking = data.accounts.filter((a) => a.type === "checking");
-  const cards = data.accounts.filter((a) => a.type === "creditCard" || a.type === "lineOfCredit");
-  const byGroup = useMemo(() => {
-    const map = new Map<string, CategoryOption[]>();
-    for (const c of data.categories) map.set(c.group, [...(map.get(c.group) ?? []), c]);
-    return [...map];
-  }, [data.categories]);
-
-  const updateGroup = (i: number, patch: Partial<CreditLimitGroup>) =>
-    setGroups((g) => g.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  /** Default name for a limit group: its cards' names, e.g. "Leumi Cards + Max Card". */
-  const groupName = (g: CreditLimitGroup) =>
-    g.accountIds.map((id) => cards.find((c) => c.id === id)?.name).filter(Boolean).join(" + ");
-  const toggleCard = (i: number, id: string) => {
-    // A card belongs to one group: ticking it here removes it from the others.
-    setGroups((g) =>
-      g.map((x, j) => {
-        if (j === i) return { ...x, accountIds: x.accountIds.includes(id) ? x.accountIds.filter((a) => a !== id) : [...x.accountIds, id] };
-        return { ...x, accountIds: x.accountIds.filter((a) => a !== id) };
-      })
-    );
-  };
-
-  const save = async () => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await saveSpendingSettings({
-        periodEnd: periodEnd ? Number(periodEnd) : "month-end",
-        buffer: Math.round((Number(buffer) || 0) * K),
-        baselineMonths: Number(months) || 6,
-        subtractExpected: subtract,
-        overdraft: overdraft.limitAccountId && overdraft.accountId ? overdraft : null,
-        creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || groupName(g) })),
-        flexibleCategoryIds: [...flexible],
-      });
-      setMessage("Saved.");
-      onSaved();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const select = "h-8 rounded-md border border-input bg-background px-2 text-sm";
-  return (
-    <Card>
-      <CardContent className="space-y-6 p-5 text-sm">
-        <section className="grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1">
-            <span className="font-medium">Period ends</span>
-            <select className={cn(select, "w-full")} value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)}>
-              <option value="">At the end of the month</option>
-              {Array.from({ length: 31 }, (_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  On day {i + 1}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="font-medium">Buffer (₪, kept aside in the cash-flow number)</span>
-            <Input value={buffer} onChange={(e) => setBuffer(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className="h-8" />
-          </label>
-          <label className="space-y-1">
-            <span className="font-medium">Normal spending is measured over (months)</span>
-            <Input
-              value={months}
-              onChange={(e) => setMonths(e.target.value.replace(/\D/g, "").slice(0, 2))}
-              inputMode="numeric"
-              className="h-8"
-              aria-describedby="months-help"
-            />
-            <span id="months-help" className="text-xs text-muted-foreground">
-              1 to 24 full months before this one. The middle value is used.
-            </span>
-          </label>
-          <label className="flex items-start gap-2 pt-6">
-            <input type="checkbox" className="mt-1" checked={subtract} onChange={(e) => setSubtract(e.target.checked)} />
-            <span>
-              <span className="font-medium">Subtract normal spending still expected this period</span>
-              <span className="block text-xs text-muted-foreground">
-                On: "left to spend" is what you can spend on top of your usual life. Off: the total before usual spending.
-              </span>
-            </span>
-          </label>
-        </section>
-
-        <section className="space-y-2">
-          <p className="font-medium">Overdraft</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <span>Limit is the balance of</span>
-            <select className={select} value={overdraft.limitAccountId} onChange={(e) => setOverdraft({ ...overdraft, limitAccountId: e.target.value })}>
-              <option value="">(none)</option>
-              {checking.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-            <span>and is used by</span>
-            <select className={select} value={overdraft.accountId} onChange={(e) => setOverdraft({ ...overdraft, accountId: e.target.value })}>
-              <option value="">(none)</option>
-              {checking.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </section>
-
-        <section className="space-y-2">
-          <p className="font-medium">Card limits</p>
-          <p className="text-xs text-muted-foreground">Put cards that share one limit in the same group. Cards in no group show "not set".</p>
-          {groups.map((g, i) => (
-            <div key={i} className="space-y-2 rounded-md border p-3">
-              <div className="flex flex-wrap items-end gap-3">
-                <label className="space-y-1">
-                  <span className="block text-xs text-muted-foreground">Credit limit (₪)</span>
-                  <Input
-                    value={g.limit ? String(Math.round(g.limit / K)) : ""}
-                    onChange={(e) => updateGroup(i, { limit: (Number(e.target.value.replace(/\D/g, "")) || 0) * K })}
-                    inputMode="numeric"
-                    placeholder="20000"
-                    className="h-8 w-32 text-right"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="block text-xs text-muted-foreground">Name (optional)</span>
-                  <Input value={g.name} onChange={(e) => updateGroup(i, { name: e.target.value })} placeholder={groupName(g) || "Leumi + Max"} className="h-8 w-48" />
-                </label>
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setGroups((x) => x.filter((_, j) => j !== i))} title="Remove this limit">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="text-xs text-muted-foreground">Cards that share this limit:</span>
-                {cards.map((c) => (
-                  <label key={c.id} className="flex items-center gap-1">
-                    <input type="checkbox" checked={g.accountIds.includes(c.id)} onChange={() => toggleCard(i, c.id)} />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-          <Button size="sm" variant="outline" onClick={() => setGroups((g) => [...g, { name: "", limit: 0, accountIds: [] }])}>
-            <Plus className="h-3.5 w-3.5" /> Add limit group
-          </Button>
-        </section>
-
-        <section className="space-y-2">
-          <p className="font-medium">Flexible categories (YNAB number)</p>
-          <p className="text-xs text-muted-foreground">None ticked = every category counts.</p>
-          <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            {byGroup.map(([group, list]) => (
-              <div key={group}>
-                <p className="text-xs font-semibold text-muted-foreground">{group}</p>
-                {list.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={flexible.has(c.id)}
-                      onChange={() =>
-                        setFlexible((f) => {
-                          const next = new Set(f);
-                          if (next.has(c.id)) next.delete(c.id);
-                          else next.add(c.id);
-                          return next;
-                        })
-                      }
-                    />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="flex items-center gap-3">
-          <Button onClick={save} disabled={busy}>
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save settings
-          </Button>
-          {message && <span className={cn("text-sm", message === "Saved." ? "text-green-700" : "text-destructive")}>{message}</span>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 // --- Shared data for Home, Inbox, Cards, and Settings ---
 
 const CACHE_KEY = "spending.data.v2";
@@ -415,12 +206,12 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options: { quick?: boolean } = {}) => {
     const request = ++latest.current;
     setLoading(true);
     setError("");
     try {
-      const next = await getSpending();
+      const next = await getSpending(options.quick);
       if (request === latest.current) {
         setData(next);
         try {
@@ -465,10 +256,4 @@ export function SpendingLoading() {
       {error ? <span className="text-destructive">{error}</span> : <><Loader2 className="h-4 w-4 animate-spin" /> Loading your numbers from YNAB…</>}
     </div>
   );
-}
-
-export function SpendingSettingsPanel() {
-  const { data, reload } = useSpending();
-  if (!data) return <SpendingLoading />;
-  return <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={reload} />;
 }

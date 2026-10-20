@@ -64,14 +64,26 @@ export function lastSuccessfulScrapeAt(runs: Pick<RunSummary, "createdAt" | "acc
   return runs.find((run) => run.accounts.length > 0 && run.accounts.every((account) => account.success))?.createdAt ?? null;
 }
 
-export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10)) {
+type YnabData = [{ accounts: Account[] }, { month: Month }, { scheduled_transactions: ScheduledTransaction[] }, Awaited<ReturnType<typeof getAllTransactions>>];
+
+/** The last YNAB read, so a reload after a settings change does not wait for YNAB again. */
+let lastYnab: { budget: string; at: number; data: YnabData } | null = null;
+const QUICK_MAX_AGE_MS = 10 * 60_000;
+
+/** `quick`: reuse the last YNAB read (up to 10 minutes old); only the settings changed. */
+export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10), options: { quick?: boolean } = {}) {
   const budget = budgetPath();
-  const [{ accounts }, { month }, { scheduled_transactions: scheduled }, transactions] = await Promise.all([
-    ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`),
-    ynabRequest<{ month: Month }>(token, `${budget}/months/current`),
-    ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`),
-    getAllTransactions(token, loadYnabImportConfig().budgetId),
-  ]);
+  const reuse = options.quick && lastYnab?.budget === budget && Date.now() - lastYnab.at < QUICK_MAX_AGE_MS;
+  const data: YnabData = reuse
+    ? lastYnab!.data
+    : await Promise.all([
+        ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`),
+        ynabRequest<{ month: Month }>(token, `${budget}/months/current`),
+        ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`),
+        getAllTransactions(token, loadYnabImportConfig().budgetId),
+      ]);
+  if (!reuse) lastYnab = { budget, at: Date.now(), data };
+  const [{ accounts }, { month }, { scheduled_transactions: scheduled }, transactions] = data;
 
   const settings = loadSettings();
   const lastScrapedAt = lastSuccessfulScrapeAt(listRuns());

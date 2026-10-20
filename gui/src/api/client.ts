@@ -499,8 +499,9 @@ export interface SpendingData {
   categories: CategoryOption[];
 }
 
-export async function getSpending(): Promise<SpendingData> {
-  return request("/spending");
+/** quick: after a settings change; the server reuses its last YNAB read. */
+export async function getSpending(quick = false): Promise<SpendingData> {
+  return request(quick ? "/spending?quick=1" : "/spending");
 }
 
 export async function saveSpendingSettings(settings: Partial<SpendingSettings>): Promise<SpendingSettings> {

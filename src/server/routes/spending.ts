@@ -119,9 +119,10 @@ async function checkSettings(body: unknown, current: Settings, categoryIds: () =
 
 router.get(
   "/",
-  handle(async () => {
+  handle(async (req) => {
     loadAppEnv({ override: true });
-    return getSpending(getYnabToken());
+    // quick=1: reload after a settings change; reuses the last YNAB read.
+    return getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1" });
   })
 );
 
