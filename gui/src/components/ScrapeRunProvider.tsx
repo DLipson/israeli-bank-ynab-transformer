@@ -15,11 +15,11 @@ import {
   readStoredJson,
   removeStored,
   writeStoredJson,
+  type AccountStatus,
   type Phase,
   type ScrapeRunParams,
   type ScrapeRunState,
 } from "@/lib/scrape-run";
-import type { AccountStatus } from "@/components/ScrapeProgress";
 import type { LogEntry } from "@/components/ScrapeLogs";
 
 /** Holds the live run above the tabs, so leaving the view does not stop the stream. */
@@ -125,9 +125,10 @@ export function ScrapeRunProvider({ children }: { children: ReactNode }) {
             case "progress":
               setEntries((prev) => [...prev, { text: event.message ?? "", account: event.account }]);
               if (event.message) {
-                const match = event.message.match(/^Scraping (.+)\.\.\.$/);
+                // The server sends "\nScraping <name>...", with a leading newline.
+                const match = event.message.match(/^\s*Scraping (.+)\.\.\.$/);
                 if (match) {
-                  const name = match[1].replace(/^\n/, "");
+                  const name = match[1];
                   setAccountStatuses((prev) => {
                     const exists = prev.find((a) => a.name === name);
                     if (exists) {

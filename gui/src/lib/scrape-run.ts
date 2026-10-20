@@ -1,9 +1,15 @@
 import { createContext, useContext } from "react";
 import type { ScrapePayload, YnabImportResult, YnabRow } from "@/api/client";
-import type { AccountStatus } from "@/components/ScrapeProgress";
 import type { LogEntry } from "@/components/ScrapeLogs";
 
 export type Phase = "settings" | "progress" | "results";
+
+export interface AccountStatus {
+  name: string;
+  status: "pending" | "scraping" | "done" | "failed";
+  transactionCount?: number;
+  error?: string;
+}
 export type ExportResult = { csvPaths: string[]; auditLogPath: string };
 export type CopyStatus = "idle" | "copied" | "failed";
 
@@ -72,22 +78,6 @@ export function startOfDay(date: Date): Date {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
   return copy;
-}
-
-export function parseDate(value: string | null): Date | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-export function calculateDaysBack(lastScrapeAt: string | null): number | null {
-  const lastScrapeDate = parseDate(lastScrapeAt);
-  if (!lastScrapeDate) return null;
-  const target = startOfDay(lastScrapeDate);
-  target.setDate(target.getDate() - 1);
-  const today = startOfDay(new Date());
-  const diffDays = Math.round((today.getTime() - target.getTime()) / MS_PER_DAY);
-  return Math.max(1, diffDays);
 }
 
 export function extractLastScrapeAt(payload: ScrapePayload | null): string | null {

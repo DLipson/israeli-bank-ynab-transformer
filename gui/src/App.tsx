@@ -20,7 +20,7 @@ import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
 
-/** A second row of tabs inside a top tab (e.g. Scrape: Scrape | Past runs). */
+/** A second row of tabs inside a top tab (Settings). */
 function SubTabs({
   value,
   onChange,
@@ -54,7 +54,7 @@ const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
 function Shell() {
   const { data } = useSpending();
   const [tab, setTab] = useState("home");
-  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", settings: "spending" });
+  const [views, setViews] = useState<Record<string, string>>({ settings: "spending" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
   const navigate = (t: string, v?: string) => {
     const target = OLD_TABS[t] ?? t;
@@ -79,7 +79,7 @@ function Shell() {
             <TabsTrigger value="scrape">Scrape</TabsTrigger>
           </TabsList>
           <span className="flex-1" />
-          <UpdateChip openScrape={() => navigate("scrape", "scrape")} />
+          <UpdateChip openScrape={() => setTab("scrape")} />
           <button
             type="button"
             aria-label="Settings"
@@ -107,14 +107,11 @@ function Shell() {
         </TabsContent>
 
         <TabsContent value="scrape">
-          <SubTabs
-            value={views.scrape}
-            onChange={setView("scrape")}
-            items={[
-              { value: "scrape", label: "Scrape", content: <ScrapePage /> },
-              { value: "history", label: "Past runs", content: <HistoryPage /> },
-            ]}
-          />
+          <ScrapePage openInbox={() => setTab("inbox")} openHistory={() => setTab("history")} />
+        </TabsContent>
+
+        <TabsContent value="history">
+          <HistoryPage />
         </TabsContent>
 
         <TabsContent value="settings">

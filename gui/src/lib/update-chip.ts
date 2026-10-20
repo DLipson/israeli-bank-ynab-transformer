@@ -1,5 +1,4 @@
-import type { AccountStatus } from "@/components/ScrapeProgress";
-import { MS_PER_DAY, startOfDay, type Phase, type ScrapeRunParams } from "@/lib/scrape-run";
+import { MS_PER_DAY, startOfDay, type AccountStatus, type Phase, type ScrapeRunParams } from "@/lib/scrape-run";
 
 /** The Scrape page's saved options (localStorage `scrape.settings.v1`). */
 export type SavedScrapeOptions = Partial<ScrapeRunParams>;
