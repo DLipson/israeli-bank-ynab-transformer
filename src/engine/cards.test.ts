@@ -137,4 +137,13 @@ describe("watchItems", () => {
       { kind: "card-over", label: "Cal: ₪700 over the limit", target: { tab: "cards", group: "Cal" } },
     ]);
   });
+
+  it("lists the items the user wants to check, after the cards and essentials", () => {
+    const toCheck = [{ id: "dup:1", title: "Possible duplicate: Shop", detail: "2 charges of ₪250 on 2 Oct", date: "2026-10-02", amount: 250 * K }];
+    expect(watchItems(cardGroups(snapshot()), [], toCheck).at(-1)).toEqual({
+      kind: "to-check",
+      label: "To check: Possible duplicate: Shop · 2 charges of ₪250 on 2 Oct",
+      target: { tab: "check", id: "dup:1" },
+    });
+  });
 });

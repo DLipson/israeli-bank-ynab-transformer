@@ -189,3 +189,17 @@ describe("income marks", () => {
     expect(setCategory).not.toHaveBeenCalled();
   });
 });
+
+describe("To check list", () => {
+  it("saves an item to check, undoes it, and clears it when the user dismisses it as fine", async () => {
+    const item = { title: "Possible duplicate: Shop", detail: "2 charges", date: "2026-10-02", amount: 250_000 };
+    expect((await call("POST", `/anomalies/${encodeURIComponent("dup:1")}/check`, item)).status).toBe(200);
+    expect(saved().toCheck).toEqual([{ id: "dup:1", ...item }]);
+    await call("POST", `/anomalies/${encodeURIComponent("dup:1")}/uncheck`);
+    expect(saved().toCheck).toEqual([]);
+    await call("POST", `/anomalies/${encodeURIComponent("dup:1")}/check`, item);
+    await call("POST", "/anomalies/dismiss", { id: "dup:1" });
+    expect(saved()).toMatchObject({ toCheck: [], dismissedAnomalies: ["dup:1"] });
+    expect((await call("POST", "/anomalies/x/check", { title: 5 })).status).toBe(400);
+  });
+});

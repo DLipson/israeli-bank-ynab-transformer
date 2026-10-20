@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { loadAppEnv } from "../../env.js";
 import { getYnabToken } from "../../ynab/import-service.js";
 import {
+  addToCheck,
   createScheduled,
   deleteCreatedScheduled,
   dismissAnomaly,
@@ -9,6 +10,7 @@ import {
   ignoreSuggestion,
   loadSettings,
   recentInflows,
+  removeToCheck,
   recentPurchases,
   restoreAnomaly,
   restoreSuggestion,
@@ -215,6 +217,20 @@ router.post(
     return { ok: true };
   })
 );
+
+/** "Check it": the client sends the item as shown, so it can stay on the list after it ages out. */
+router.post(
+  "/anomalies/:id/check",
+  handle((req) => {
+    const b = req.body as { title?: unknown; detail?: unknown; date?: unknown; amount?: unknown };
+    if (typeof b.title !== "string" || typeof b.detail !== "string" || typeof b.date !== "string" || typeof b.amount !== "number") {
+      throw new Error("title, detail, date, and amount are required.");
+    }
+    return addToCheck({ id: String(req.params.id), title: b.title, detail: b.detail, date: b.date, amount: b.amount });
+  })
+);
+
+router.post("/anomalies/:id/uncheck", handle((req) => removeToCheck(String(req.params.id))));
 
 router.post("/anomalies/:id/restore", handle((req) => restoreAnomaly(String(req.params.id))));
 

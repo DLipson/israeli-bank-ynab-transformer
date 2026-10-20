@@ -99,6 +99,16 @@ export interface Settings {
   refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
   /** The user's marks on money-in entries: "not-income" (a reconciliation) or "income" (a transfer to count). */
   incomeMarks: Record<string, "income" | "not-income">;
+  /** Unusual items the user chose to check later ("Check it"), saved whole so they stay after 30 days. */
+  toCheck: ToCheckItem[];
+}
+
+export interface ToCheckItem {
+  id: string;
+  title: string;
+  detail: string;
+  date: string;
+  amount: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -116,6 +126,7 @@ export const DEFAULT_SETTINGS: Settings = {
   createdScheduleIds: [],
   refundLinks: [],
   incomeMarks: {},
+  toCheck: [],
 };
 
 /** Convert a saved inclusive end day to the following payday; month-end and day 31 become month-start. */

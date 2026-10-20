@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { CreditCard, Loader2, Pencil, TrendingUp } from "lucide-react";
+import { CreditCard, Loader2, Pencil, SearchCheck, TrendingUp } from "lucide-react";
 import { Expand, Line, Muted, TxLine } from "@/components/Rows";
 import { card, label, link, row, useOpen } from "@/lib/rows";
 import { RefundPicker } from "@/components/RefundPicker";
-import { saveSpendingSettings, setIncomeMark, type CategoryComparison, type IncomeMark, type SpendingData } from "@/api/client";
+import { dismissAnomaly, saveSpendingSettings, setIncomeMark, type CategoryComparison, type IncomeMark, type SpendingData } from "@/api/client";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { K, formatDate, nextEssentialsOverride, shekels, useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
@@ -357,24 +357,49 @@ function AvailableCard({ data, navigate }: { data: SpendingData; navigate: Navig
 }
 
 function WatchCard({ data, navigate, openCategory }: { data: SpendingData; navigate: Navigate; openCategory: (id: string) => void }) {
-  if (data.watch.length === 0) return null;
+  const { reload } = useSpending();
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [error, setError] = useState("");
+  const items = data.watch.filter((w) => !(w.target.tab === "check" && hidden.has(w.target.id)));
+  if (items.length === 0) return null;
+
+  // Looks fine: dismisses the unusual item for good (local only), which also takes it off the To check list.
+  const fine = async (id: string) => {
+    setHidden((h) => new Set(h).add(id));
+    setError("");
+    try {
+      await dismissAnomaly(id);
+      reload({ quick: true });
+    } catch (e) {
+      setHidden((h) => {
+        const next = new Set(h);
+        next.delete(id);
+        return next;
+      });
+      setError(e instanceof Error ? e.message : "Could not save");
+    }
+  };
+
   return (
     <div className={cn(card, "py-3")}>
       <p className={cn(label, "mb-1")}>Things to watch</p>
-      {data.watch.map((w, i) => {
-        const Icon = w.kind === "essential-over-pace" ? TrendingUp : CreditCard;
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {items.map((w, i) => {
+        const Icon = w.kind === "essential-over-pace" ? TrendingUp : w.kind === "to-check" ? SearchCheck : CreditCard;
+        const tone = w.kind === "card-low" || w.kind === "to-check" ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
+        const target = w.target;
         return (
           <div key={w.label} className={cn(row, i === 0 && "border-t-0")}>
             <span className="flex min-w-0 items-center gap-1.5">
-              <Icon className={cn("h-4 w-4 shrink-0", w.kind === "card-low" ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400")} aria-hidden="true" />
+              <Icon className={cn("h-4 w-4 shrink-0", tone)} aria-hidden="true" />
               <span dir="auto">{w.label}</span>
             </span>
             <button
               type="button"
               className="shrink-0 text-[13px] text-sky-700 hover:underline dark:text-sky-400"
-              onClick={() => (w.target.tab === "cards" ? navigate("cards", w.target.group) : openCategory(w.target.categoryId))}
+              onClick={() => (target.tab === "check" ? void fine(target.id) : target.tab === "cards" ? navigate("cards", target.group) : openCategory(target.categoryId))}
             >
-              Open
+              {target.tab === "check" ? "Looks fine" : "Open"}
             </button>
           </div>
         );

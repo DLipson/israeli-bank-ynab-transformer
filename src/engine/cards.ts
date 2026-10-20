@@ -4,7 +4,7 @@
  */
 import { readMemoFields, type YnabTransaction } from "../ynab/categorize.js";
 import { parseChargeDate } from "./charge-date.js";
-import { formatShekels, installmentPlans, type Snapshot } from "./safe-spending.js";
+import { formatShekels, installmentPlans, type Snapshot, type ToCheckItem } from "./safe-spending.js";
 import { isMeaningful, type CategoryComparison } from "./category-comparisons.js";
 import type { TxRef } from "./spent-vs-income.js";
 
@@ -135,13 +135,13 @@ export function cardGroups(snapshot: Snapshot): CardGroup[] {
 }
 
 export interface WatchItem {
-  kind: "card-low" | "card-over" | "essential-over-pace";
+  kind: "card-low" | "card-over" | "essential-over-pace" | "to-check";
   label: string;
-  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string };
+  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string } | { tab: "check"; id: string };
 }
 
 /** "Things to watch": true now, no memory. Spending above income is not here: the bar shows it. */
-export function watchItems(groups: CardGroup[], comparisons: CategoryComparison[]): WatchItem[] {
+export function watchItems(groups: CardGroup[], comparisons: CategoryComparison[], toCheck: ToCheckItem[] = []): WatchItem[] {
   const cards = groups.flatMap((g): WatchItem[] =>
     g.state === "over"
       ? [{ kind: "card-over", label: `${g.name}: ${formatShekels(-g.headroom!)} over the limit`, target: { tab: "cards", group: g.name } }]
@@ -156,5 +156,7 @@ export function watchItems(groups: CardGroup[], comparisons: CategoryComparison[
       label: `${c.name}: ${formatShekels(c.difference)} over the normal by this day`,
       target: { tab: "home", categoryId: c.categoryId },
     }));
-  return [...cards, ...essentials];
+  // "Check it" in the Inbox: stays here until the user marks it fine.
+  const checks = toCheck.map((c): WatchItem => ({ kind: "to-check", label: `To check: ${c.title} · ${c.detail}`, target: { tab: "check", id: c.id } }));
+  return [...cards, ...essentials, ...checks];
 }

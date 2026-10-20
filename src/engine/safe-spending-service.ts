@@ -19,6 +19,7 @@ import {
   type ScheduledTransaction,
   type Settings,
   settingsFromSaved,
+  type ToCheckItem,
   type Snapshot,
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
@@ -124,7 +125,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
     spentVsIncome,
     available: cashflow,
     cards,
-    watch: watchItems(cards, comparisons),
+    watch: watchItems(cards, comparisons, settings.toCheck),
     settings,
     cashflow,
     ynab,
@@ -134,7 +135,8 @@ export async function getSpending(token: string, today = new Date().toISOString(
     obligations: obligations(snapshot),
     suggestions: suggestScheduled(snapshot),
     baseline: spendBaseline,
-    anomalies: detectAnomalies(transactions, spendBaseline.categories, spendBaseline.asOf, settings.dismissedAnomalies),
+    // Items on the To check list leave the Inbox; they show in Things to watch.
+    anomalies: detectAnomalies(transactions, spendBaseline.categories, spendBaseline.asOf, [...settings.dismissedAnomalies, ...settings.toCheck.map((c) => c.id)]),
     upcoming: scheduledOutflows(scheduled, today, new Date(Date.parse(`${today}T00:00:00Z`) + 62 * 86400000).toISOString().slice(0, 10)),
     /** Income counted and spending in a full month (yyyy-mm), by the Home rules, for the monthly report. */
     monthFlow: (m: string) => {
@@ -225,6 +227,7 @@ export function restoreSuggestion(id: string): Settings {
 export function dismissAnomaly(id: string): Settings {
   const settings = loadSettings();
   settings.dismissedAnomalies = [...new Set([...settings.dismissedAnomalies, id])];
+  settings.toCheck = settings.toCheck.filter((c) => c.id !== id);
   saveSettings(settings);
   return settings;
 }
@@ -313,4 +316,20 @@ export async function recentInflows(token: string, today = new Date().toISOStrin
       amount: t.amount,
       mark: marks[t.id] ?? null,
     }));
+}
+
+/** "Check it": keeps an unusual item on the To check list. Local only. */
+export function addToCheck(item: ToCheckItem): Settings {
+  const settings = loadSettings();
+  settings.toCheck = [...settings.toCheck.filter((c) => c.id !== item.id), item];
+  saveSettings(settings);
+  return settings;
+}
+
+/** Undo of "Check it". */
+export function removeToCheck(id: string): Settings {
+  const settings = loadSettings();
+  settings.toCheck = settings.toCheck.filter((c) => c.id !== id);
+  saveSettings(settings);
+  return settings;
 }

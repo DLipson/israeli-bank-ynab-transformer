@@ -5,12 +5,14 @@ import {
   acceptCategory,
   createScheduled,
   deleteCreatedScheduled,
+  checkAnomaly,
   dismissAnomaly,
   getCategorizeList,
   getLlmSuggestions,
   ignoreScheduleSuggestion,
   restoreAnomaly,
   restoreScheduleSuggestion,
+  uncheckAnomaly,
   type CategorizeItem,
   type CategoryOption,
 } from "@/api/client";
@@ -203,7 +205,13 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
         await ignoreScheduleSuggestion(q.id);
         return () => restoreScheduleSuggestion(q.id);
       });
-    } else void run(`${card.buttons[1]} · ${card.payee}`, async () => {}); // Check it / Skip: nothing to save
+    } else if (q.kind === "unusual") {
+      // Check it: the item leaves the Inbox and stays in Things to watch on Home until marked fine.
+      void run(`${card.buttons[1]} · ${card.payee}`, async () => {
+        await checkAnomaly(q.anomaly);
+        return () => uncheckAnomaly(q.id);
+      });
+    } else void run(`${card.buttons[1]} · ${card.payee}`, async () => {}); // Skip: nothing to save
   };
 
   return (

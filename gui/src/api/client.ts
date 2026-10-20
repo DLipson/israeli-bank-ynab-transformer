@@ -327,6 +327,7 @@ export interface SpendingSettings {
   createdScheduleIds: string[];
   refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
   incomeMarks: Record<string, IncomeMark>;
+  toCheck: Array<{ id: string; title: string; detail: string; date: string; amount: number }>;
   /** Old keys: the server no longer returns them. Sent by the old Setup page until phase 11. */
   periodEnd?: "month-end" | number;
   overdraft?: { limitAccountId: string; accountId: string } | null;
@@ -414,9 +415,9 @@ export interface CardGroup {
 }
 
 export interface WatchItem {
-  kind: "card-low" | "card-over" | "essential-over-pace";
+  kind: "card-low" | "card-over" | "essential-over-pace" | "to-check";
   label: string;
-  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string };
+  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string } | { tab: "check"; id: string };
 }
 
 export interface Pace {
@@ -573,6 +574,16 @@ export async function setIncomeMark(id: string, mark: IncomeMark | null): Promis
 }
 
 // --- Inbox Undo ---
+
+/** "Check it": puts an unusual item on the To check list (Things to watch). Local only. */
+export async function checkAnomaly(a: Pick<Anomaly, "id" | "title" | "detail" | "date" | "amount">): Promise<void> {
+  const { id, ...item } = a;
+  await request(`/spending/anomalies/${encodeURIComponent(id)}/check`, { method: "POST", body: JSON.stringify(item) });
+}
+
+export async function uncheckAnomaly(id: string): Promise<void> {
+  await request(`/spending/anomalies/${encodeURIComponent(id)}/uncheck`, { method: "POST" });
+}
 
 export async function restoreAnomaly(id: string): Promise<void> {
   await request(`/spending/anomalies/${encodeURIComponent(id)}/restore`, { method: "POST" });
