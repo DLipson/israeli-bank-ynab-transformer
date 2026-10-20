@@ -9,9 +9,11 @@
  *   so the expected rest of the month never subtracts those twice.
  */
 import type { YnabTransaction } from "../ynab/categorize.js";
+import { readMemoFields } from "../ynab/categorize.js";
 
 export interface SpendItem {
   date: string;
+  transactionId?: string;
   /** Positive = money spent; a refund is negative. */
   amount: number;
   categoryId: string;
@@ -51,17 +53,18 @@ export function spendItems(transactions: YnabTransaction[]): SpendItem[] {
   const items: SpendItem[] = [];
   for (const t of transactions) {
     if (t.deleted) continue;
-    const installment = /"installment"\s*:/.test(t.memo ?? "");
+    const installment = typeof readMemoFields(t.memo)?.installment === "string";
     const parts = (t.subtransactions as SubTransaction[] | undefined)?.filter((s) => !s.deleted);
     const lines = parts?.length
       ? parts
       : [{ amount: t.amount, category_id: t.category_id, category_name: t.category_name, transfer_account_id: t.transfer_account_id, deleted: false }];
     for (const p of lines) {
-      if (p.transfer_account_id && !p.category_id) continue;
+      if (p.transfer_account_id) continue;
       if (p.category_name === READY_TO_ASSIGN) continue;
       const uncategorized = !p.category_id || p.category_name === UNCATEGORIZED;
       items.push({
         date: t.date,
+        transactionId: t.id,
         amount: -p.amount,
         categoryId: uncategorized ? UNCATEGORIZED : p.category_id!,
         categoryName: uncategorized ? UNCATEGORIZED : p.category_name ?? "",
@@ -123,7 +126,7 @@ function sumDays(items: SpendItem[], month: string, fromDay: number, toDay: numb
 const COVER_SHARE = 0.25;
 const COVER_DAYS = 5;
 
-function normalizedName(value: string | null | undefined): string {
+export function normalizedName(value: string | null | undefined): string {
   return (value ?? "")
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
@@ -132,7 +135,7 @@ function normalizedName(value: string | null | undefined): string {
     .trim();
 }
 
-function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
+export function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
   const leftName = normalizedName(a);
   const rightName = normalizedName(b);
   if (leftName && leftName === rightName) return true;

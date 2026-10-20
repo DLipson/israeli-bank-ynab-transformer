@@ -13,24 +13,18 @@ export interface MonthlyFlow {
   carryoverTo: string;
 }
 
-export function monthlyFlowFor(
-  transactions: YnabTransaction[],
-  items: SpendItem[],
-  categories: MonthCategory[],
-  today: string,
-  planActivity: number | null = null
-): MonthlyFlow {
-  const month = today.slice(0, 7);
-  const previous = pastMonths(today, 1)[0];
-  const lastDay = new Date(Date.UTC(Number(previous.slice(0, 4)), Number(previous.slice(5, 7)), 0)).getUTCDate();
-  const carryoverFrom = `${previous}-${String(Math.max(1, lastDay - 6)).padStart(2, "0")}`;
-  const carryoverTo = `${previous}-${String(lastDay).padStart(2, "0")}`;
-  const monthLastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
-  const monthCarryoverFrom = `${month}-${String(Math.max(1, monthLastDay - 6)).padStart(2, "0")}`;
+export interface IncomeLine {
+  transaction: YnabTransaction;
+  date: string;
+  amount: number;
+  category: string | null;
+}
+
+export function incomeLines(transactions: YnabTransaction[], categories: MonthCategory[]): IncomeLine[] {
   const incomeCategoryIds = new Set(
     categories.filter((c) => c.category_group_name === "Internal Master Category").map((c) => c.id)
   );
-  const income = transactions.flatMap((t) => {
+  return transactions.flatMap((t) => {
     if (t.deleted) return [];
     const parts = t.subtransactions as
       | Array<{
@@ -60,8 +54,28 @@ export function monthlyFlowFor(
             incomeCategoryIds.has(p.category_id) ||
             p.category_name === "Inflow: Ready to Assign")
       )
-      .map((p) => ({ date: t.date, amount: p.amount }));
+      .map((p) => ({ transaction: t, date: t.date, amount: p.amount, category: p.category_name }));
   });
+}
+
+export function monthlyFlowFor(
+  transactions: YnabTransaction[],
+  items: SpendItem[],
+  categories: MonthCategory[],
+  today: string,
+  planActivity: number | null = null
+): MonthlyFlow {
+  const month = today.slice(0, 7);
+  const previous = pastMonths(today, 1)[0];
+  const lastDay = new Date(Date.UTC(Number(previous.slice(0, 4)), Number(previous.slice(5, 7)), 0)).getUTCDate();
+  const carryoverFrom = `${previous}-${String(Math.max(1, lastDay - 6)).padStart(2, "0")}`;
+  const carryoverTo = `${previous}-${String(lastDay).padStart(2, "0")}`;
+  const monthLastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const monthCarryoverFrom = `${month}-${String(Math.max(1, monthLastDay - 6)).padStart(2, "0")}`;
+  const income = incomeLines(transactions, categories);
+  const incomeCategoryIds = new Set(
+    categories.filter((category) => category.category_group_name === "Internal Master Category").map((category) => category.id)
+  );
   const incomeThisMonth = income
     .filter((i) => i.date.startsWith(month) && i.date <= today && i.date < monthCarryoverFrom)
     .reduce((sum, i) => sum + i.amount, 0);

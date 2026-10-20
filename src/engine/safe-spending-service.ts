@@ -22,6 +22,7 @@ import {
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
+import { spentVsIncomeFor } from "./spent-vs-income.js";
 import { detectAnomalies } from "./anomalies.js";
 import { isUncategorized } from "../ynab/categorize.js";
 
@@ -91,11 +92,13 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
   const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
+  const spentVsIncome = spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today);
   return {
     today,
     lastScrapedAt,
     periodEnd: end,
     monthlyFlow,
+    spentVsIncome,
     settings,
     cashflow,
     ynab,

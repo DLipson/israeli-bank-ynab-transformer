@@ -55,8 +55,15 @@ describe("spendItems", () => {
     ]);
   });
 
+  it("leaves categorized transfers out of spending too", () => {
+    expect(
+      spendItems([txn({ transfer_account_id: "savings", amount: -250 * K })])
+    ).toEqual([]);
+  });
+
   it("marks installment charges", () => {
     expect(spendItems([txn({ memo: JSON.stringify({ installment: "2/10" }) })])[0].installment).toBe(true);
+    expect(spendItems([txn({ memo: "{ installment: '2/10' }" })])[0].installment).toBe(true);
   });
 });
 

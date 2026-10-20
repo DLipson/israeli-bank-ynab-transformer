@@ -1,20 +1,20 @@
 # Handoff — financial-intelligence
 
-Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phase 0 complete).
+Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phase 1 complete).
 
 ## Active task: Home redesign
 
 - Main repo: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer`; implementation worktree: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer-home-redesign`.
 - Branch: `home-redesign`, based on `master` at `352243c`. One branch for all phases; one commit per phase; do not push or merge.
 - The plan and mockup are copied into the worktree. The local spec is not copied and must never be committed.
-- Phase 0 is implemented. Engine tests pass: 22 files, 205 tests. GUI TypeScript check passes when invoking the installed compiler directly; `npm run build` could not resolve `tsc` through its Windows script wrapper.
+- Phases 0 and 1 are implemented. Phase 0: `npm test` passed (22 files, 205 tests); GUI TypeScript project check passed via the installed compiler. Phase 1: `npm test` passed (23 files, 208 tests); `npm run build` passed. Real data through 19 Oct from the local cache: spent ₪19,766.44, income ₪18,095.81. The plan's rounded spent value ₪19,796 counted one ₪30 positive uncategorized entry as both income and a spending reduction; the user chose to count it as income only, explaining the difference.
 - `npm install` completed in the root and `gui`; `node_modules/israeli-bank-scrapers` links to `C:\Users\Dovid L\Dev\israeli-bank-scrapers`.
 - User deleted the duplicate Leumi Cards schedules and the duplicate ₪30 איחוד הצלה entry in YNAB. No YNAB writes have been made by this task.
 
 ### Phase checklist
 
 - [x] 0 — Data fixes: charge-date parsing and month-end income.
-- [ ] 1 — Engine: spent vs income.
+- [x] 1 — Engine: spent vs income.
 - [ ] 2 — Engine: available until payday.
 - [ ] 3 — Engine: category comparisons.
 - [ ] 4 — Engine: cards.
@@ -32,6 +32,7 @@ Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesi
 - `spentVsIncome` must include the full spending transaction list; savings transfers count from any source account.
 - Bills count only when not a transfer, dated today through period end, and not already reflected by a similar same-account transaction within 25% amount and 5 days. Card-account charges remain eligible.
 - Undo stays in the open Inbox's browser memory and clears on reload/restart. The server records IDs of schedules it creates; Undo may delete only those IDs.
+- Positive uncategorized transactions count as income. Home will offer an explicit action to update the YNAB category when treating one as a refund; an optional link to its purchase is stored locally because YNAB does not link those transactions directly. Mock the YNAB update in tests; no live writes during development.
 - Never run tests or browser actions that write to YNAB; any possible YNAB write requires stopping for the user. Use API mocks and ports 3002/5174; leave 3001/5173 running.
 
 Decision log: `docs/financial-intelligence-notes.md`. Source plan: `IMPLEMENTATION-PLAN-home-redesign.md`. Mockup: `docs/mockups/home-redesign.html`.
