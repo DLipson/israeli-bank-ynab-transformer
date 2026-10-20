@@ -23,6 +23,43 @@
   --radius: 0.5rem;
 }
 
+/* Tailwind v4 draws borders in the text color; use the border token, as Tailwind v3 and shadcn did. */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border);
+  }
+}
+
+/* Dark mode follows the system setting; Tailwind's dark: variant uses the same media query. */
+:root {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0a0a0a;
+    --color-foreground: #fafafa;
+    --color-card: #171717;
+    --color-card-foreground: #fafafa;
+    --color-popover: #171717;
+    --color-popover-foreground: #fafafa;
+    --color-primary: #fafafa;
+    --color-primary-foreground: #171717;
+    --color-secondary: #262626;
+    --color-secondary-foreground: #fafafa;
+    --color-muted: #262626;
+    --color-muted-foreground: #a3a3a3;
+    --color-accent: #262626;
+    --color-accent-foreground: #fafafa;
+    --color-destructive: #f87171;
+    --color-border: #2e2e2e;
+    --color-input: #3a3a3a;
+    --color-ring: #d4d4d4;
+  }
+}
+
 body {
   font-family:
     -apple-system,

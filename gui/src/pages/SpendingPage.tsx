@@ -15,87 +15,13 @@ import {
   type Anomaly,
   type CategoryOption,
   type CreditLimitGroup,
-  type LeftToSpend,
-  type Pace,
   type Report,
   type ReportType,
   type ScheduleSuggestion,
   type SpendingData,
-  type SpendingSettings,
 } from "@/api/client";
 import { formatDate, K, monthLabel, shekels, SpendingContext, useSpending } from "@/lib/spending";
-
-function Lines({ result }: { result: LeftToSpend }) {
-  return (
-    <div className="space-y-2">
-      <table className="w-full text-sm">
-        <tbody>
-          {result.lines.map((l, i) => (
-            <tr key={`${l.label}-${i}`} className="border-b last:border-0">
-              <td className="py-1 pr-4" dir="auto">
-                {l.label}
-              </td>
-              <td className={cn("py-1 text-right font-mono", l.amount < 0 && "text-red-700")}>{shekels(l.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {result.warnings.map((w) => (
-        <p key={w} className="flex items-start gap-1 text-xs text-amber-700">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {w}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-const MODE_NAMES = { cashflow: "Cash-flow", ynab: "YNAB categories" } as const;
-
-/** The main number, its mode switch, and how it is built: for Home's "Details". */
-export function NumberDetails({ data, onMode }: { data: SpendingData; onMode: (mode: SpendingSettings["mode"]) => void }) {
-  const mode = data.settings.mode;
-  const main = mode === "cashflow" ? data.cashflow : data.ynab;
-  const other = mode === "cashflow" ? data.ynab : data.cashflow;
-  const otherMode = mode === "cashflow" ? "ynab" : "cashflow";
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {MODE_NAMES[otherMode]}: <span className="font-medium text-foreground">{shekels(other.total)}</span>
-        </p>
-        <div className="inline-flex rounded-md border p-0.5" role="radiogroup" aria-label="Main number">
-          {(["cashflow", "ynab"] as const).map((m) => (
-            <button
-              key={m}
-              role="radio"
-              aria-checked={mode === m}
-              onClick={() => mode !== m && onMode(m)}
-              className={cn(
-                "rounded px-3 py-1 text-sm transition-colors",
-                mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-              )}
-            >
-              {MODE_NAMES[m]}
-            </button>
-          ))}
-        </div>
-      </div>
-      {data.readyToAssign > 0 && Math.abs(data.gap) > K && (
-        <p className="text-xs text-muted-foreground">
-          The two numbers differ by {shekels(Math.abs(data.gap))}, mostly because {shekels(data.readyToAssign)} is still in
-          YNAB's Ready to Assign.
-        </p>
-      )}
-      <p className="text-xs text-muted-foreground">
-        {mode === "cashflow"
-          ? `This estimate covers ${formatDate(data.today)} through ${formatDate(data.periodEnd)}. The lines below show the account balances and deductions used; negative amounts lower the total.`
-          : `This uses current YNAB category balances as of ${formatDate(data.today)}. The lines below show the spending groups counted; money in Ready to Assign is left out.`}
-      </p>
-      <Lines result={main} />
-    </div>
-  );
-}
+import { readStoredJson, writeStoredJson } from "@/lib/scrape-run";
 
 function SuggestionRow({
   s,
@@ -220,88 +146,6 @@ function SuggestionRow({
       )}
       {error && <p className="px-3 pb-2 text-xs text-destructive">{error}</p>}
     </div>
-  );
-}
-
-const PACE_LABEL: Record<Pace["status"], string> = {
-  under: "under pace",
-  on: "on pace",
-  over: "over pace",
-  "fixed-paid": "paid",
-  "fixed-due": "not paid yet",
-};
-
-export function PaceBadge({ p }: { p: Pace }) {
-  const style =
-    p.status === "over"
-      ? "bg-red-100 text-red-800"
-      : p.status === "under"
-        ? "bg-green-100 text-green-800"
-        : "bg-muted text-muted-foreground";
-  const pct = p.difference === null ? "" : ` ${p.difference > 0 ? "+" : ""}${Math.round(p.difference * 100)}%`;
-  return <span className={cn("whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium", style)}>{PACE_LABEL[p.status]}{pct}</span>;
-}
-
-function PaceRow({ p }: { p: Pace }) {
-  return (
-    <div className="flex items-center gap-3 py-1 text-sm">
-      <span className="min-w-0 flex-1 truncate" dir="auto">
-        {p.name}
-      </span>
-      {p.status.startsWith("fixed") ? (
-        <span className="text-xs text-muted-foreground">normally {shekels(p.normalMonth)}</span>
-      ) : (
-        <span className="font-mono text-xs">
-          {shekels(p.thisMonth)} <span className="text-muted-foreground">/ {shekels(p.normalByToday)}</span>
-        </span>
-      )}
-      <PaceBadge p={p} />
-    </div>
-  );
-}
-
-/** Pace this month vs. a normal month up to the same day (the date of the newest import). */
-export function PaceCard({ data }: { data: SpendingData }) {
-  const b = data.baseline;
-  const scrapeDate = data.lastScrapedAt?.slice(0, 10);
-  const age = scrapeDate ? Math.max(0, Math.round((Date.parse(data.today) - Date.parse(scrapeDate)) / 86400000)) : null;
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          Pace this month <PaceBadge p={b.total} />
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Spent {shekels(b.total.thisMonth)} up to {formatDate(b.asOf)}; a normal month by then is {shekels(b.total.normalByToday)} (middle
-          value of the last {b.months} months). A whole normal month is {shekels(b.total.normalMonth)}.
-          {age === null && <span className="text-amber-700"> No successful bank scrape is recorded.</span>}
-          {age !== null && age >= 3 && <span className="text-amber-700"> The last successful scrape was {age} days ago: run a scrape for a fair pace.</span>}
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {b.topOver.length > 0 ? (
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Most over pace</p>
-            {b.topOver.map((p) => (
-              <PaceRow key={p.name} p={p} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No category is over pace.</p>
-        )}
-        {b.uncategorized > 0 && (
-          <p className="text-xs text-amber-700">{shekels(b.uncategorized)} this month is not categorized yet, so no category pace includes it.</p>
-        )}
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">All categories ({b.categories.length})</summary>
-          <div className="mt-1 divide-y">
-            {b.categories.map((p) => (
-              <PaceRow key={p.name} p={p} />
-            ))}
-          </div>
-        </details>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -755,9 +599,15 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
 
 // --- Shared data for Home, Review, Reports, and Setup ---
 
+const CACHE_KEY = "spending.data.v2";
+
 /** Loads the spending numbers once for every tab that shows them; reload() refreshes them. */
 export function SpendingProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<SpendingData | null>(null);
+  // The last numbers show at once; the request (about 10 s) then replaces them.
+  const [data, setData] = useState<SpendingData | null>(() => {
+    const cached = readStoredJson<SpendingData | null>(CACHE_KEY, null);
+    return cached?.available && cached.spentVsIncome ? cached : null;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latest = useRef(0);
@@ -768,7 +618,14 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
     setError("");
     try {
       const next = await getSpending();
-      if (request === latest.current) setData(next);
+      if (request === latest.current) {
+        setData(next);
+        try {
+          writeStoredJson(CACHE_KEY, next);
+        } catch {
+          // Storage full or blocked: the numbers still show, only the next start is slower.
+        }
+      }
     } catch (e) {
       if (request === latest.current) setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -784,15 +641,6 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
     reload();
   }, [reload]);
 
-  const setMode = useCallback(async (mode: SpendingSettings["mode"]) => {
-    setData((d) => (d ? { ...d, settings: { ...d.settings, mode } } : d));
-    try {
-      await saveSpendingSettings({ mode });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the mode");
-    }
-  }, []);
-
   const removeSuggestion = useCallback(
     (id: string) => {
       setData((d) => (d ? { ...d, suggestions: d.suggestions.filter((s) => s.id !== id) } : d));
@@ -802,7 +650,7 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SpendingContext.Provider value={{ data, loading, error, reload, setMode, removeSuggestion }}>{children}</SpendingContext.Provider>
+    <SpendingContext.Provider value={{ data, loading, error, reload, removeSuggestion }}>{children}</SpendingContext.Provider>
   );
 }
 

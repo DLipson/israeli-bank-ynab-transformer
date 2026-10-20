@@ -444,7 +444,7 @@ export function leftCashflow(snapshot: Snapshot): AvailableUntilPayday {
     .map((a) => ({ label: a.name, amount: a.balance }));
   const cards = accounts
     .filter((a) => OWED_TYPES.has(a.type) && a.balance !== 0)
-    .map((a) => ({ label: `${a.name} (card balance)`, amount: a.balance }));
+    .map((a) => ({ label: a.name, amount: a.balance }));
   // One posted transaction clears one schedule date only, so a duplicate schedule stays visible.
   const usedTxIds = new Set<string>();
   const bills = snapshot.scheduled

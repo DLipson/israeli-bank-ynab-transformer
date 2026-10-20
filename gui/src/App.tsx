@@ -147,8 +147,6 @@ function Shell() {
               { value: "accounts", label: "Bank accounts", content: <AccountsPage /> },
               { value: "ynab", label: "YNAB import", content: <YnabPage /> },
               { value: "reconcile", label: "Reconcile", content: <ReconcilePage /> },
-              // ponytail: until Home gets its report link (phase 7), reports stay reachable here.
-              { value: "reports", label: "Reports", content: <ReportsPanel /> },
             ]}
           />
         </TabsContent>
