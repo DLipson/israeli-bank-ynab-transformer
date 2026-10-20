@@ -20,6 +20,7 @@ const cached = [
   { id: "split", date: "2026-09-21", amount: -100_000, payee_name: "Market", category_id: null, category_name: "Split", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false, subtransactions: [{ amount: -50_000, category_id: "a" }, { amount: -50_000, category_id: "b" }] },
   { id: "clinic", date: "2026-10-01", amount: 450_000, payee_name: "Clinic", category_id: "rta", category_name: "Inflow: Ready to Assign", account_id: "m", account_name: "Main", transfer_account_id: null, memo: null, deleted: false },
   { id: "move", date: "2026-10-14", amount: 8_000_000, payee_name: "Transfer : Savings", category_id: null, category_name: null, account_id: "m", account_name: "Main", transfer_account_id: "sav", memo: null, deleted: false },
+  { id: "cardpay", date: "2026-10-02", amount: 7_577_000, payee_name: "Transfer : Main", category_id: null, category_name: null, account_id: "c", account_name: "Card", transfer_account_id: "m", memo: null, deleted: false },
   { id: "old", date: "2026-05-01", amount: -100_000, payee_name: "Old shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
 ];
 vi.mock("../../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => cached }));
@@ -45,6 +46,7 @@ beforeEach(() => {
   process.env[OVERRIDE_ENV] = dir;
   ynabRequest.mockReset();
   ynabRequest.mockImplementation(async (_token: string, path: string, init?: RequestInit) => {
+    if (path === "/budgets/b/accounts") return { accounts: [{ id: "c", type: "creditCard" }, { id: "m", type: "checking" }] };
     if (path === "/budgets/b/months/current") return { month: { month: "2026-10-01", to_be_budgeted: 0, categories: CATEGORIES } };
     if (path === "/budgets/b/scheduled_transactions" && init?.method === "POST") return { scheduled_transaction: { id: "new-s" } };
     if (path.startsWith("/budgets/b/scheduled_transactions/") && init?.method === "DELETE") return { scheduled_transaction: { id: "new-s" } };
@@ -164,7 +166,7 @@ describe("Treat as refund", () => {
 });
 
 describe("income marks", () => {
-  it("lists money-in transactions with transfers, and saves and clears a mark", async () => {
+  it("lists money-in transactions with transfers, but not card payments, and saves and clears a mark", async () => {
     const list = await call("GET", "/inflows?today=2026-10-20");
     expect((list.json.inflows as Array<{ id: string; transfer: boolean }>).map((i) => [i.id, i.transfer])).toEqual([
       ["move", true],

@@ -288,13 +288,20 @@ export function setIncomeMark(id: string, mark: IncomeMark | null): Settings {
   return settings;
 }
 
-/** Money-in transactions of the last 120 days, newest first, transfers included, with their mark. Read-only. */
+/**
+ * Money-in transactions of the last 120 days, newest first, transfers included, with their mark.
+ * A transfer into a card or loan account is a payment of that debt, so it is left out. Read-only.
+ */
 export async function recentInflows(token: string, today = new Date().toISOString().slice(0, 10)) {
   const from = new Date(Date.parse(`${today}T00:00:00Z`) - INFLOW_DAYS * 86400000).toISOString().slice(0, 10);
   const marks = loadSettings().incomeMarks;
-  const transactions = await getAllTransactions(token, loadYnabImportConfig().budgetId);
+  const [{ accounts }, transactions] = await Promise.all([
+    ynabRequest<{ accounts: Account[] }>(token, `${budgetPath()}/accounts`),
+    getAllTransactions(token, loadYnabImportConfig().budgetId),
+  ]);
+  const debt = new Set(accounts.filter((a) => a.type === "creditCard" || a.type === "lineOfCredit" || /Loan|Debt|Mortgage|Liability/i.test(a.type)).map((a) => a.id));
   return transactions
-    .filter((t) => !t.deleted && t.amount > 0 && t.date >= from && t.date <= today)
+    .filter((t) => !t.deleted && t.amount > 0 && t.date >= from && t.date <= today && !(t.transfer_account_id && debt.has(t.account_id)))
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((t) => ({
       id: t.id,

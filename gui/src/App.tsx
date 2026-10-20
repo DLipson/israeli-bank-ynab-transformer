@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings } from "lucide-react";
+import { RotateCw, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrapePage } from "@/pages/ScrapePage";
 import { HistoryPage } from "@/pages/HistoryPage";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
 
 function Shell() {
-  const { data } = useSpending();
+  const { data, loading, reload } = useSpending();
   const [tab, setTab] = useState("home");
   const [views, setViews] = useState<Record<string, string>>({ settings: "main" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
@@ -47,6 +47,16 @@ function Shell() {
           </TabsList>
           <span className="flex-1" />
           <UpdateChip openScrape={() => setTab("scrape")} />
+          <button
+            type="button"
+            aria-label="Refresh from YNAB"
+            title="Refresh from YNAB"
+            onClick={() => reload()}
+            disabled={loading}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-60"
+          >
+            <RotateCw className={cn("h-[18px] w-[18px]", loading && "animate-spin")} />
+          </button>
           <button
             type="button"
             aria-label="Settings"
