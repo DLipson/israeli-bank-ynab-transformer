@@ -1,72 +1,18 @@
-import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, CreditCard, Loader2, Pencil, TrendingUp } from "lucide-react";
-import { saveSpendingSettings, type CategoryComparison, type SpendingData, type TxRef } from "@/api/client";
+import { useState } from "react";
+import { CreditCard, Loader2, Pencil, TrendingUp } from "lucide-react";
+import { Expand, Line, Muted, TxLine } from "@/components/Rows";
+import { card, label, row, useOpen } from "@/lib/rows";
+import { saveSpendingSettings, type CategoryComparison, type SpendingData } from "@/api/client";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { K, formatDate, nextEssentialsOverride, shekels, useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
 
 export type Navigate = (tab: string, view?: string) => void;
 
-const card = "rounded-xl border bg-card px-5 py-4";
-const label = "text-[13px] text-muted-foreground";
-const row = "flex items-center justify-between gap-2 border-t py-1.5 text-sm";
-
 function monthName(yyyyMm: string): string {
   return new Date(`${yyyyMm}-01T00:00:00`).toLocaleDateString("en-IL", { month: "long" });
 }
 
-/** A row with an arrow; a tap shows the rows behind it. */
-function Expand({ title, amount, open, onToggle, children }: { title: ReactNode; amount: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
-  const Chevron = open ? ChevronDown : ChevronRight;
-  return (
-    <>
-      <button type="button" onClick={onToggle} aria-expanded={open} className={cn(row, "w-full text-left hover:bg-muted/50")}>
-        <span className="flex min-w-0 items-center gap-1">
-          <Chevron className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 truncate">{title}</span>
-        </span>
-        <span className="shrink-0">{amount}</span>
-      </button>
-      {open && <div className="mb-1 pl-4">{children}</div>}
-    </>
-  );
-}
-
-/** Open/closed state for many Expand rows, by key. */
-function useOpen(initial: string[] = []) {
-  const [open, setOpen] = useState(() => new Set(initial));
-  return {
-    is: (key: string) => open.has(key),
-    toggle: (key: string) =>
-      setOpen((s) => {
-        const next = new Set(s);
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-        return next;
-      }),
-    add: (key: string) => setOpen((s) => new Set(s).add(key)),
-  };
-}
-
-/** `text` may be Hebrew, so it gets its own direction; the date after it stays left to right. */
-function Line({ text, date, amount, note }: { text: string; date?: string; amount: number; note?: ReactNode }) {
-  return (
-    <div className={row}>
-      <span className="min-w-0 text-muted-foreground">
-        <span dir="auto">{text}</span>
-        {date && ` · ${formatDate(date)}`}
-        {note}
-      </span>
-      <span className="shrink-0">{shekels(amount)}</span>
-    </div>
-  );
-}
-
-function TxLine({ t, note }: { t: TxRef; note?: ReactNode }) {
-  return <Line text={t.payee || "No payee"} date={t.date} amount={t.amount} note={note} />;
-}
-
-const Muted = ({ children }: { children: ReactNode }) => <span className="ml-1 text-xs text-muted-foreground">{children}</span>;
 
 const COMPARE_WORD: Record<CategoryComparison["type"], string> = { occasional: "avg", essential: "normal by this day", fixed: "" };
 
@@ -137,7 +83,7 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
               onToggle={() => open.toggle(`cat:${r.categoryId}`)}
             >
               {r.items.map((t) => (
-                <TxLine key={t.id} t={t} />
+                <TxLine key={t.id} t={t} spend />
               ))}
             </Expand>
           ))}
@@ -158,7 +104,7 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
           {s.savedThisMonth.amount > 0 && (
             <Expand title="Moved to savings" amount={shekels(s.savedThisMonth.amount)} open={open.is("saved")} onToggle={() => open.toggle("saved")}>
               {s.savedThisMonth.items.map((t) => (
-                <TxLine key={t.id} t={t} />
+                <TxLine key={t.id} t={t} spend />
               ))}
             </Expand>
           )}
@@ -174,7 +120,7 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
             onToggle={() => open.toggle("all")}
           >
             {s.spendingItems.map((t) => (
-              <TxLine key={t.id} t={t} note={t.category && <Muted>· {t.category}</Muted>} />
+              <TxLine key={t.id} t={t} spend note={t.category && <Muted>· {t.category}</Muted>} />
             ))}
           </Expand>
         </div>

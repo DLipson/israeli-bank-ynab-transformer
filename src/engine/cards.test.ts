@@ -38,6 +38,7 @@ const isracard = [
   txn("isracard", "2026-10-08", -100, { chargeDate: "2026-11-02", installment: "1/12", originalAmount: -1200 }),
   txn("isracard", "2026-10-02", -100, { chargeDate: "2026-11-02", installment: "4/12", originalAmount: -1200 }),
   txn("isracard", "2026-10-20", -30, null),
+  txn("isracard", "2026-10-14", 0, null, { payee_name: "Starting Balance" }),
 ];
 
 /** Cal: old dd/mm/yyyy chargeDate in object-text memos. */

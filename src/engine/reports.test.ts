@@ -28,7 +28,7 @@ function input(o: Partial<ReportInput> = {}): ReportInput {
       topOver: [pace("Tzeduka", "over", 735, 375)],
     },
     exposure: [{ name: "Overdraft", limit: 40000 * K, used: 20260 * K, unused: 19740 * K, lines: [] }, { name: "Cal", limit: null, used: 800 * K, unused: null, lines: [] }],
-    obligations: [{ month: "2026-11", installments: 0, scheduled: 5595 * K, total: 5595 * K }],
+    obligations: [{ month: "2026-11", installments: 0, scheduled: 5595 * K, total: 5595 * K, items: { scheduled: [], installments: [] } }],
     upcoming: [
       { date: "2026-10-20", label: "Ichud Hatzala", amount: 30 * K },
       { date: "2026-10-30", label: "Partner", amount: 95 * K },

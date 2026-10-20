@@ -214,12 +214,23 @@ describe("installments, credit exposure, and obligations", () => {
   });
 
   it("lists installments not yet in a card balance plus scheduled outflows, per month", () => {
-    const result = obligations(snapshot({ transactions: [plan(2, "2026-11-02")], scheduled: [scheduled({ date_next: "2026-11-06" })] }), 3);
-    expect(result).toEqual([
+    const result = obligations(
+      snapshot({
+        transactions: [plan(2, "2026-11-02")],
+        scheduled: [scheduled({ date_next: "2026-11-06" }), scheduled({ id: "card", payee_name: "Card payment", transfer_account_id: "leumi" })],
+      }),
+      3
+    );
+    expect(result.map(({ items: _items, ...totals }) => totals)).toEqual([
       { month: "2026-11", installments: 0, scheduled: 500 * K, total: 500 * K },
       { month: "2026-12", installments: 135 * K, scheduled: 500 * K, total: 635 * K },
       { month: "2027-01", installments: 135 * K, scheduled: 500 * K, total: 635 * K },
     ]);
+    // The items behind each month; a scheduled transfer (card payment) is not a bill.
+    expect(result[1].items).toEqual({
+      scheduled: [{ label: "Rent", date: "2026-12-06", amount: 500 * K }],
+      installments: [{ payee: "Course", account: "Leumi Cards", payment: 135 * K, paymentsLeft: 8 }],
+    });
   });
 });
 

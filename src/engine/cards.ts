@@ -57,7 +57,7 @@ function unpaid(transactions: YnabTransaction[], accountId: string, today: strin
     .reduce<string | null>((max, t) => (max === null || t.date > max ? t.date : max), null);
   const after = lastPayment ?? addDays(today, -NO_PAYMENT_DAYS);
   return own
-    .filter((t) => !t.transfer_account_id && (parseChargeDate(t.memo) ?? t.date) > after)
+    .filter((t) => !t.transfer_account_id && t.amount !== 0 && (parseChargeDate(t.memo) ?? t.date) > after)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 

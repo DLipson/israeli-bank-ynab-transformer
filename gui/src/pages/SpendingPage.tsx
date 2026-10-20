@@ -15,7 +15,7 @@ import {
   type ReportType,
   type SpendingData,
 } from "@/api/client";
-import { formatDate, K, monthLabel, shekels, SpendingContext, useSpending } from "@/lib/spending";
+import { formatDate, K, monthLabel, SpendingContext, useSpending } from "@/lib/spending";
 import { readStoredJson, writeStoredJson } from "@/lib/scrape-run";
 
 const REPORT_INFO: Record<ReportType, { name: string; when: string }> = {
@@ -192,72 +192,6 @@ export function ReportsPanel() {
         onMade={(r) => setReports((all) => (all ? { ...all, [selected]: r } : all))}
       />
     </div>
-  );
-}
-
-export function Exposure({ data }: { data: SpendingData }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Credit exposure</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs text-muted-foreground">
-              <th className="py-1 font-medium">Limit group</th>
-              <th className="py-1 text-right font-medium">Limit</th>
-              <th className="py-1 text-right font-medium">Used</th>
-              <th className="py-1 text-right font-medium">Unused</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.exposure.filter((g) => g.used > 0 || g.limit !== null).map((g) => (
-              <tr key={g.name} className="border-b last:border-0" title={g.lines.map((l) => `${l.label}: ${shekels(l.amount)}`).join("\n")}>
-                <td className="py-1.5" dir="auto">
-                  {g.name}
-                </td>
-                <td className="py-1.5 text-right font-mono">{g.limit === null ? <span className="text-muted-foreground">not set</span> : shekels(g.limit)}</td>
-                <td className="py-1.5 text-right font-mono">{shekels(g.used)}</td>
-                <td className={cn("py-1.5 text-right font-mono", g.unused !== null && g.unused < 0 && "text-red-700")}>
-                  {g.unused === null ? "—" : shekels(g.unused)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="mt-2 text-xs text-muted-foreground">Used = balance owed + installments still to be charged. Hover a row for details.</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-export function Obligations({ data }: { data: SpendingData }) {
-  const max = Math.max(...data.obligations.map((o) => o.total), 1);
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Coming months</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {data.obligations.map((o) => (
-          <div
-            key={o.month}
-            className="flex items-center gap-3 text-sm"
-            title={`${shekels(o.scheduled)} scheduled + ${shekels(o.installments)} installments`}
-          >
-            <span className="w-20 shrink-0 text-muted-foreground">{monthLabel(o.month)}</span>
-            <div className="h-2 flex-1 rounded bg-muted">
-              <div className="h-2 rounded bg-primary/70" style={{ width: `${(o.total / max) * 100}%` }} />
-            </div>
-            <span className="w-20 text-right font-mono">{shekels(o.total)}</span>
-          </div>
-        ))}
-        <p className="pt-2 text-xs text-muted-foreground">
-          Scheduled outflows from YNAB plus installments not yet in a card balance. Income is not counted.
-        </p>
-      </CardContent>
-    </Card>
   );
 }
 

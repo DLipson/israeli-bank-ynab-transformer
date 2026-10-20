@@ -255,14 +255,17 @@ export function occurrences(s: Pick<ScheduledTransaction, "date_next" | "frequen
   return dates;
 }
 
-/** Scheduled outflows from `from` to `to`, one entry per date. Income is never counted ahead. */
+/**
+ * Scheduled outflows from `from` to `to`, one entry per date. Income is never counted ahead, and a
+ * scheduled transfer (a card payment from the bank) only moves money between own accounts.
+ */
 export function scheduledOutflows(
   scheduled: ScheduledTransaction[],
   from: string,
   to: string
 ): Array<{ date: string; label: string; amount: number }> {
   return scheduled
-    .filter((s) => !s.deleted && s.amount < 0)
+    .filter((s) => !s.deleted && s.amount < 0 && !s.transfer_account_id)
     .flatMap((s) =>
       occurrences(s, to)
         .filter((date) => date >= from)
@@ -600,6 +603,10 @@ export interface MonthObligations {
   installments: number;
   scheduled: number;
   total: number;
+  items: {
+    scheduled: Array<{ label: string; date: string; amount: number }>;
+    installments: Array<{ payee: string; account: string; payment: number; paymentsLeft: number }>;
+  };
 }
 
 /**
@@ -612,16 +619,22 @@ export function obligations(snapshot: Snapshot, months = 12): MonthObligations[]
   const plans = installmentPlans(snapshot.transactions, snapshot.today);
   const [ly, lm] = addMonths(y, m, months);
   const outflows = scheduledOutflows(snapshot.scheduled, iso(...addMonths(y, m, 1), 1), dayIn(ly, lm, 31));
+  const names = new Map(snapshot.accounts.map((a) => [a.id, a.name]));
   return Array.from({ length: months }, (_, i) => {
     const [year, month] = addMonths(y, m, i + 1);
     const label = iso(year, month, 1).slice(0, 7);
-    const installments = plans.reduce((s, p) => {
+    const planItems = plans.flatMap((p) => {
       const [py, pm] = parts(p.lastCharge);
       const ahead = (year - py) * 12 + (month - pm);
-      return ahead >= 1 && ahead <= p.total - p.paid ? s + p.payment : s;
-    }, 0);
-    const scheduled = outflows.filter((o) => o.date.startsWith(label)).reduce((s, o) => s + o.amount, 0);
-    return { month: label, installments, scheduled, total: installments + scheduled };
+      const left = p.total - p.paid;
+      return ahead >= 1 && ahead <= left
+        ? [{ payee: p.payee, account: names.get(p.accountId) ?? "", payment: p.payment, paymentsLeft: left - ahead + 1 }]
+        : [];
+    });
+    const scheduledItems = outflows.filter((o) => o.date.startsWith(label));
+    const installments = planItems.reduce((s, p) => s + p.payment, 0);
+    const scheduled = scheduledItems.reduce((s, o) => s + o.amount, 0);
+    return { month: label, installments, scheduled, total: installments + scheduled, items: { scheduled: scheduledItems, installments: planItems } };
   });
 }
 

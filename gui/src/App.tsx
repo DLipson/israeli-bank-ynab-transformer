@@ -9,11 +9,9 @@ import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
 import { InboxPage } from "@/pages/InboxPage";
+import { CardsPage } from "@/pages/CardsPage";
 import {
-  Exposure,
-  Obligations,
   ReportsPanel,
-  SpendingLoading,
   SpendingProvider,
   SpendingSettingsPanel,
 } from "@/pages/SpendingPage";
@@ -47,18 +45,6 @@ function SubTabs({
         </TabsContent>
       ))}
     </Tabs>
-  );
-}
-
-/** Cards until phase 9: the existing credit and coming-months panels. */
-function CardsTab() {
-  const { data } = useSpending();
-  if (!data) return <SpendingLoading />;
-  return (
-    <div className="space-y-4">
-      <Exposure data={data} />
-      <Obligations data={data} />
-    </div>
   );
 }
 
@@ -117,7 +103,7 @@ function Shell() {
         </TabsContent>
 
         <TabsContent value="cards">
-          <CardsTab />
+          <CardsPage navigate={navigate} openGroup={views.cards} />
         </TabsContent>
 
         <TabsContent value="scrape">

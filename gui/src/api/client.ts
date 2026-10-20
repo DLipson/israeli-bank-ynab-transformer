@@ -480,7 +480,16 @@ export interface SpendingData {
   gap: number;
   readyToAssign: number;
   exposure: Array<{ name: string; limit: number | null; used: number; unused: number | null; lines: SpendingLine[] }>;
-  obligations: Array<{ month: string; installments: number; scheduled: number; total: number }>;
+  obligations: Array<{
+    month: string;
+    installments: number;
+    scheduled: number;
+    total: number;
+    items: {
+      scheduled: Array<{ label: string; date: string; amount: number }>;
+      installments: Array<{ payee: string; account: string; payment: number; paymentsLeft: number }>;
+    };
+  }>;
   suggestions: ScheduleSuggestion[];
   scheduledCount: number;
   baseline: Baseline;

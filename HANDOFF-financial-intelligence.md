@@ -1,13 +1,13 @@
 # Handoff — financial-intelligence
 
-Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phase 8 complete).
+Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phase 9 complete).
 
 ## Active task: Home redesign
 
 - Main repo: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer`; implementation worktree: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer-home-redesign`.
 - Branch: `home-redesign`, based on `master` at `352243c`. One branch for all phases; one commit per phase; do not push or merge.
 - The plan and mockup are copied into the worktree. The local spec is not copied and must never be committed.
-- Phases 0–8 are implemented. Phase 0: `npm test` passed (22 files, 205 tests); GUI TypeScript project check passed. Phase 1: `npm test` passed (23 files, 208 tests); `npm run build` passed. Real data through 19 Oct from the local cache: spent ₪19,766.44, income ₪18,095.81; the ₪30 difference from the spec sample is the positive uncategorized transaction counted as income only per the user. Phase 2: `npm test` passed (23 files, 218 tests); root build and GUI TypeScript check passed. Use Node 24.11.1: prefix PATH with `/c/Users/Dovid L/AppData/Local/nvm/v24.11.1` (PATH default is 22.13.1). The engine now returns five keyed available-until-payday lines, follows the new payday setting and legacy migration, calculates selected essentials and partial overrides, filters bills, and excludes overdraft from card exposure.
+- Phases 0–9 are implemented. Phase 0: `npm test` passed (22 files, 205 tests); GUI TypeScript project check passed. Phase 1: `npm test` passed (23 files, 208 tests); `npm run build` passed. Real data through 19 Oct from the local cache: spent ₪19,766.44, income ₪18,095.81; the ₪30 difference from the spec sample is the positive uncategorized transaction counted as income only per the user. Phase 2: `npm test` passed (23 files, 218 tests); root build and GUI TypeScript check passed. Use Node 24.11.1: prefix PATH with `/c/Users/Dovid L/AppData/Local/nvm/v24.11.1` (PATH default is 22.13.1). The engine now returns five keyed available-until-payday lines, follows the new payday setting and legacy migration, calculates selected essentials and partial overrides, filters bills, and excludes overdraft from card exposure.
 - `npm install` completed in the root and `gui`; `node_modules/israeli-bank-scrapers` links to `C:\Users\Dovid L\Dev\israeli-bank-scrapers`.
 - User deleted the duplicate Leumi Cards schedules and the duplicate ₪30 איחוד הצלה entry in YNAB. No YNAB writes have been made by this task.
 
@@ -22,7 +22,7 @@ Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesi
 - [x] 6 — GUI shell and update chip (browser-checked with a fake scrape stream).
 - [x] 7 — Home (browser-checked at 680/375 px, light/dark).
 - [x] 8 — Inbox and Undo (YNAB writes faked in the browser; live Undo writes not yet tested).
-- [ ] 9 — Cards.
+- [x] 9 — Cards (browser-checked; colors change at the warning level and at 0).
 - [ ] 10 — Scrape.
 - [ ] 11 — Settings and links.
 - [ ] 12 — Monthly report.
