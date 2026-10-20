@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
 import { spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
-import { spentVsIncomeFor } from "./spent-vs-income.js";
+import { spentVsIncomeFor, withRefundLinks } from "./spent-vs-income.js";
 import type { Account, MonthCategory } from "./safe-spending.js";
 
 const K = 1000;
@@ -216,5 +216,24 @@ describe("spentVsIncomeFor", () => {
       amount: 1_200 * K,
       items: [{ id: "gift", date: "2026-10-12", oneTime: true }],
     });
+  });
+});
+
+describe("Treat as refund", () => {
+  const purchase = txn({ id: "shoes", date: "2026-09-20", amount: -300 * K, category_id: "clothing", category_name: "Clothing", payee_name: "Shoe shop" });
+  const back = (category: Pick<YnabTransaction, "category_id" | "category_name">) =>
+    txn({ id: "back", date: "2026-10-08", amount: 300 * K, payee_name: "Shoe shop", ...category });
+
+  it("counts an uncategorized positive entry as income, and the same entry as a refund once it has the purchase's category", () => {
+    const before = overview([txn({ id: "food", amount: -1000 * K }), purchase, back({ category_id: null, category_name: null })]);
+    expect(before).toMatchObject({ spent: 1000 * K, income: 300 * K });
+    const after = overview([txn({ id: "food", amount: -1000 * K }), purchase, back({ category_id: "clothing", category_name: "Clothing" })]);
+    expect(after).toMatchObject({ spent: 700 * K, income: 0 });
+  });
+
+  it("marks the refund with the purchase it belongs to", () => {
+    const transactions = [purchase, back({ category_id: "clothing", category_name: "Clothing" })];
+    const result = withRefundLinks(overview(transactions), [{ refundTxId: "back", purchaseTxId: "shoes" }], transactions);
+    expect(result.spendingItems.find((t) => t.id === "back")).toMatchObject({ refundOf: { payee: "Shoe shop", date: "2026-09-20" } });
   });
 });

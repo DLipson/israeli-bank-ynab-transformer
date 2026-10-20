@@ -325,6 +325,7 @@ export interface SpendingSettings {
   baselineMonths: number;
   dismissedAnomalies: string[];
   createdScheduleIds: string[];
+  refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
   /** Old keys: the server no longer returns them. Sent by the old Setup page until phase 11. */
   periodEnd?: "month-end" | number;
   overdraft?: { limitAccountId: string; accountId: string } | null;
@@ -364,7 +365,8 @@ export interface SpentVsIncome {
   difference: number;
   daysLeft: number;
   incomeParts: Array<{ label: string; amount: number; items: Array<TxRef & { oneTime: boolean }> }>;
-  spendingItems: TxRef[];
+  /** A refund linked by "Treat as refund" shows the purchase it belongs to. */
+  spendingItems: Array<TxRef & { refundOf?: { payee: string; date: string } }>;
   savedThisMonth: { amount: number; items: TxRef[] };
   reasons: CategoryComparison[];
   uncategorized: { amount: number; count: number };
@@ -520,6 +522,28 @@ export async function createScheduled(s: {
 
 export async function ignoreScheduleSuggestion(id: string): Promise<void> {
   await request("/spending/ignore", { method: "POST", body: JSON.stringify({ id }) });
+}
+
+// --- Treat as refund ---
+
+export interface Purchase {
+  id: string;
+  date: string;
+  payee: string;
+  account: string;
+  category: string | null;
+  categoryId: string;
+  amount: number;
+}
+
+/** Purchases of the last 90 days with one category, newest first. */
+export async function getPurchases(): Promise<Purchase[]> {
+  return (await request<{ purchases: Purchase[] }>("/spending/purchases")).purchases;
+}
+
+/** YNAB write: the refund gets the purchase's category. Only from the user's click. */
+export async function treatAsRefund(refundTxId: string, purchaseTxId: string): Promise<void> {
+  await request("/spending/refund", { method: "POST", body: JSON.stringify({ refundTxId, purchaseTxId }) });
 }
 
 // --- Inbox Undo ---

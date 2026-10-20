@@ -12,6 +12,16 @@ vi.mock("../../ynab/import-service.js", () => ({
   ynabRequest,
 }));
 
+const setCategory = vi.fn();
+vi.mock("../../ynab/categorize-service.js", () => ({ setCategory }));
+const cached = [
+  { id: "back", date: "2026-10-08", amount: 300_000, payee_name: "Shoe shop", category_id: null, category_name: null, account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
+  { id: "shoes", date: "2026-09-20", amount: -300_000, payee_name: "Shoe shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
+  { id: "split", date: "2026-09-21", amount: -100_000, payee_name: "Market", category_id: null, category_name: "Split", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false, subtransactions: [{ amount: -50_000, category_id: "a" }, { amount: -50_000, category_id: "b" }] },
+  { id: "old", date: "2026-05-01", amount: -100_000, payee_name: "Old shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
+];
+vi.mock("../../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => cached }));
+
 vi.mock("../../windows-credential-manager.js", () => ({
   deleteBankCredentialsFromWindowsCredentialManager: vi.fn(),
   hydrateEnvWithStoredBankCredentials: vi.fn(),
@@ -123,5 +133,30 @@ describe("Inbox undo endpoints", () => {
     expect(deleted.status).toBe(200);
     expect(ynabRequest).toHaveBeenCalledWith("token", "/budgets/b/scheduled_transactions/new-s", { method: "DELETE" });
     expect(saved().createdScheduleIds).toEqual([]);
+  });
+});
+
+describe("Treat as refund", () => {
+  it("lists recent purchases that can be picked: categorized, not split, last 90 days, newest first", async () => {
+    const result = await call("GET", "/purchases?today=2026-10-20");
+    expect((result.json.purchases as Array<{ id: string }>).map((p) => p.id)).toEqual(["shoes"]);
+  });
+
+  it("sets the refund's YNAB category to the purchase's category and saves the link", async () => {
+    setCategory.mockReset();
+    const result = await call("POST", "/refund", { refundTxId: "back", purchaseTxId: "shoes" });
+    expect(result.status).toBe(200);
+    expect(setCategory).toHaveBeenCalledWith("token", "back", "clothing");
+    expect(saved().refundLinks).toEqual([{ refundTxId: "back", purchaseTxId: "shoes" }]);
+  });
+
+  it.each([
+    ["a purchase as the refund", { refundTxId: "shoes", purchaseTxId: "shoes" }],
+    ["a split purchase", { refundTxId: "back", purchaseTxId: "split" }],
+    ["an unknown transaction", { refundTxId: "nope", purchaseTxId: "shoes" }],
+  ])("refuses %s and writes nothing", async (_name, body) => {
+    setCategory.mockReset();
+    expect((await call("POST", "/refund", body)).status).toBe(400);
+    expect(setCategory).not.toHaveBeenCalled();
   });
 });

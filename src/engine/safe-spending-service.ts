@@ -23,11 +23,12 @@ import {
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
-import { spentVsIncomeFor } from "./spent-vs-income.js";
+import { spentVsIncomeFor, withRefundLinks } from "./spent-vs-income.js";
 import { categoryComparisons, whatPushedOver } from "./category-comparisons.js";
 import { cardGroups, watchItems } from "./cards.js";
 import { detectAnomalies } from "./anomalies.js";
-import { isUncategorized } from "../ynab/categorize.js";
+import { isUncategorized, type YnabTransaction } from "../ynab/categorize.js";
+import { setCategory } from "../ynab/categorize-service.js";
 
 function settingsPath(): string {
   return join(getAppConfigDir(), "safe-spending.json");
@@ -108,10 +109,11 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
   const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
-  const spentVsIncome = {
-    ...spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today),
-    reasons: whatPushedOver(comparisons),
-  };
+  const spentVsIncome = withRefundLinks(
+    { ...spentVsIncomeFor(transactions, items, month.categories, accounts, monthlyFlow, today), reasons: whatPushedOver(comparisons) },
+    settings.refundLinks,
+    transactions
+  );
   return {
     today,
     lastScrapedAt,
@@ -230,4 +232,41 @@ export function ignoreSuggestion(id: string): Settings {
   settings.ignoredSuggestions = [...new Set([...settings.ignoredSuggestions, id])];
   saveSettings(settings);
   return settings;
+}
+
+// --- Treat as refund ---
+
+const PURCHASE_DAYS = 90;
+
+/** A purchase that a refund can take its category from: one category (no split), not a transfer. */
+function pickablePurchase(t: YnabTransaction): boolean {
+  return !t.deleted && t.amount < 0 && !t.transfer_account_id && !t.subtransactions?.length && !isUncategorized(t) && t.category_name !== "Inflow: Ready to Assign";
+}
+
+/** Purchases of the last 90 days, newest first, for the "Treat as refund" list. Read-only. */
+export async function recentPurchases(token: string, today = new Date().toISOString().slice(0, 10)) {
+  const from = new Date(Date.parse(`${today}T00:00:00Z`) - PURCHASE_DAYS * 86400000).toISOString().slice(0, 10);
+  const transactions = await getAllTransactions(token, loadYnabImportConfig().budgetId);
+  return transactions
+    .filter((t) => pickablePurchase(t) && t.date >= from && t.date <= today)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((t) => ({ id: t.id, date: t.date, payee: t.payee_name ?? "", account: t.account_name, category: t.category_name, categoryId: t.category_id!, amount: t.amount }));
+}
+
+/**
+ * Treat as refund: gives an uncategorized positive transaction the category of the purchase it
+ * refunds (YNAB write, only from the user's click), then saves the link locally.
+ */
+export async function treatAsRefund(token: string, refundTxId: string, purchaseTxId: string): Promise<void> {
+  const transactions = await getAllTransactions(token, loadYnabImportConfig().budgetId);
+  const refund = transactions.find((t) => t.id === refundTxId);
+  const purchase = transactions.find((t) => t.id === purchaseTxId);
+  if (!refund || refund.deleted || refund.amount <= 0 || refund.transfer_account_id || refund.subtransactions?.length || !isUncategorized(refund)) {
+    throw new Error("Only an uncategorized money-in transaction can be treated as a refund.");
+  }
+  if (!purchase || !pickablePurchase(purchase)) throw new Error("Pick a purchase with one category.");
+  await setCategory(token, refund.id, purchase.category_id!);
+  const settings = loadSettings();
+  settings.refundLinks = [...settings.refundLinks.filter((l) => l.refundTxId !== refund.id), { refundTxId: refund.id, purchaseTxId: purchase.id }];
+  saveSettings(settings);
 }

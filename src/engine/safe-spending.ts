@@ -95,6 +95,8 @@ export interface Settings {
   dismissedAnomalies: string[];
   /** Schedules this app created in YNAB; Inbox Undo may delete only these. */
   createdScheduleIds: string[];
+  /** "Treat as refund" links, kept here because YNAB does not link a refund to its purchase. */
+  refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -110,6 +112,7 @@ export const DEFAULT_SETTINGS: Settings = {
   baselineMonths: 6,
   dismissedAnomalies: [],
   createdScheduleIds: [],
+  refundLinks: [],
 };
 
 /** Convert a saved inclusive end day to the following payday; month-end and day 31 become month-start. */

@@ -8,8 +8,10 @@ import {
   getSpending,
   ignoreSuggestion,
   loadSettings,
+  recentPurchases,
   restoreAnomaly,
   restoreSuggestion,
+  treatAsRefund,
   saveSettings,
   spendingCategoryIds,
 } from "../../engine/safe-spending-service.js";
@@ -167,6 +169,27 @@ router.delete(
   handle(async (req) => {
     loadAppEnv({ override: true });
     await deleteCreatedScheduled(getYnabToken(), String(req.params.id));
+    return { ok: true };
+  })
+);
+
+/** Purchases a refund can be linked to (read-only). `today` is for tests. */
+router.get(
+  "/purchases",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { purchases: await recentPurchases(getYnabToken(), typeof req.query.today === "string" ? req.query.today : undefined) };
+  })
+);
+
+/** Treat as refund: YNAB write (the refund gets the purchase's category), only from the user's click. */
+router.post(
+  "/refund",
+  handle(async (req) => {
+    const { refundTxId, purchaseTxId } = req.body as { refundTxId?: unknown; purchaseTxId?: unknown };
+    if (typeof refundTxId !== "string" || typeof purchaseTxId !== "string") throw new Error("refundTxId and purchaseTxId are required.");
+    loadAppEnv({ override: true });
+    await treatAsRefund(getYnabToken(), refundTxId, purchaseTxId);
     return { ok: true };
   })
 );

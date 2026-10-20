@@ -24,7 +24,8 @@ export interface SpentVsIncome {
     amount: number;
     items: Array<TxRef & { oneTime: boolean }>;
   }>;
-  spendingItems: TxRef[];
+  /** A refund linked by "Treat as refund" shows the purchase it belongs to. */
+  spendingItems: Array<TxRef & { refundOf?: { payee: string; date: string } }>;
   savedThisMonth: { amount: number; items: TxRef[] };
   reasons: CategoryComparison[];
   uncategorized: { amount: number; count: number };
@@ -222,5 +223,22 @@ export function spentVsIncomeFor(
       amount: monthItems.filter((item) => item.categoryId === "Uncategorized").reduce((sum, item) => sum + item.amount, 0),
       count: new Set(monthItems.filter((item) => item.categoryId === "Uncategorized").map((item) => item.transactionId)).size,
     },
+  };
+}
+
+/** Marks each linked refund with its purchase (links are saved locally; YNAB has no such link). */
+export function withRefundLinks(
+  result: SpentVsIncome,
+  links: Array<{ refundTxId: string; purchaseTxId: string }>,
+  transactions: YnabTransaction[]
+): SpentVsIncome {
+  const byId = new Map(transactions.map((t) => [t.id, t]));
+  const purchaseOf = new Map(links.map((l) => [l.refundTxId, byId.get(l.purchaseTxId)]));
+  return {
+    ...result,
+    spendingItems: result.spendingItems.map((item) => {
+      const purchase = purchaseOf.get(item.id);
+      return purchase ? { ...item, refundOf: { payee: purchase.payee_name ?? "", date: purchase.date } } : item;
+    }),
   };
 }

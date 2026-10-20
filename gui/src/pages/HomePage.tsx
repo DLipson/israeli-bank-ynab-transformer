@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { CreditCard, Loader2, Pencil, TrendingUp } from "lucide-react";
 import { Expand, Line, Muted, TxLine } from "@/components/Rows";
-import { card, label, row, useOpen } from "@/lib/rows";
+import { card, label, link, row, useOpen } from "@/lib/rows";
+import { RefundPicker } from "@/components/RefundPicker";
 import { saveSpendingSettings, type CategoryComparison, type SpendingData } from "@/api/client";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { K, formatDate, nextEssentialsOverride, shekels, useSpending } from "@/lib/spending";
@@ -17,6 +18,8 @@ function monthName(yyyyMm: string): string {
 const COMPARE_WORD: Record<CategoryComparison["type"], string> = { occasional: "avg", essential: "normal by this day", fixed: "" };
 
 function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navigate: Navigate; open: ReturnType<typeof useOpen> }) {
+  const { reload } = useSpending();
+  const [refundFor, setRefundFor] = useState("");
   const s = data.spentVsIncome;
   const month = monthName(s.month);
   const over = s.difference < 0;
@@ -50,16 +53,33 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
           {s.incomeParts.map((part) => (
             <Expand key={part.label} title={<span dir="auto">{part.label}</span>} amount={shekels(part.amount)} open={open.is(`inc:${part.label}`)} onToggle={() => open.toggle(`inc:${part.label}`)}>
               {part.items.map((t) => (
-                <TxLine
-                  key={t.id}
-                  t={t}
-                  note={
-                    <>
-                      {!t.date.startsWith(s.month) && <Muted>(counts toward {month})</Muted>}
-                      {t.oneTime && <Muted>· one-time</Muted>}
-                    </>
-                  }
-                />
+                <div key={t.id}>
+                  <TxLine
+                    t={t}
+                    note={
+                      <>
+                        {!t.date.startsWith(s.month) && <Muted>(counts toward {month})</Muted>}
+                        {t.oneTime && <Muted>· one-time</Muted>}
+                        {/* Only an uncategorized entry can become a refund (phase 13). */}
+                        {(t.category === null || t.category === "Uncategorized") && refundFor !== t.id && (
+                          <button type="button" className={cn(link, "ml-2 text-xs")} onClick={() => setRefundFor(t.id)}>
+                            Treat as refund
+                          </button>
+                        )}
+                      </>
+                    }
+                  />
+                  {refundFor === t.id && (
+                    <RefundPicker
+                      refund={t}
+                      onCancel={() => setRefundFor("")}
+                      onDone={() => {
+                        setRefundFor("");
+                        reload();
+                      }}
+                    />
+                  )}
+                </div>
               ))}
             </Expand>
           ))}
@@ -120,7 +140,21 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
             onToggle={() => open.toggle("all")}
           >
             {s.spendingItems.map((t) => (
-              <TxLine key={t.id} t={t} spend note={t.category && <Muted>· {t.category}</Muted>} />
+              <TxLine
+                key={t.id}
+                t={t}
+                spend
+                note={
+                  <>
+                    {t.category && <Muted>· {t.category}</Muted>}
+                    {t.refundOf && (
+                      <Muted>
+                        · Refund of <span dir="auto">{t.refundOf.payee}</span>, {formatDate(t.refundOf.date)}
+                      </Muted>
+                    )}
+                  </>
+                }
+              />
             ))}
           </Expand>
         </div>

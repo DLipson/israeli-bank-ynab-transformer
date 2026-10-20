@@ -1,13 +1,13 @@
 # Handoff — financial-intelligence
 
-Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phase 12 complete).
+Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phases 0–13 complete).
 
 ## Active task: Home redesign
 
 - Main repo: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer`; implementation worktree: `C:\Users\Dovid L\Dev\israeli-bank-ynab-transformer-home-redesign`.
 - Branch: `home-redesign`, based on `master` at `352243c`. One branch for all phases; one commit per phase; do not push or merge.
 - The plan and mockup are copied into the worktree. The local spec is not copied and must never be committed.
-- Phases 0–12 are implemented. Phase 0: `npm test` passed (22 files, 205 tests); GUI TypeScript project check passed. Phase 1: `npm test` passed (23 files, 208 tests); `npm run build` passed. Real data through 19 Oct from the local cache: spent ₪19,766.44, income ₪18,095.81; the ₪30 difference from the spec sample is the positive uncategorized transaction counted as income only per the user. Phase 2: `npm test` passed (23 files, 218 tests); root build and GUI TypeScript check passed. Use Node 24.11.1: prefix PATH with `/c/Users/Dovid L/AppData/Local/nvm/v24.11.1` (PATH default is 22.13.1). The engine now returns five keyed available-until-payday lines, follows the new payday setting and legacy migration, calculates selected essentials and partial overrides, filters bills, and excludes overdraft from card exposure.
+- Phases 0–13 are implemented, one commit each. Not verified live (each needs a YNAB write and the user's OK): Inbox Undo of Accept (`category_id: null`), Inbox Undo of Add schedule (YNAB `DELETE scheduled_transactions/{id}`), and Treat as refund. Browser tests used worktree servers on 3002/5174 (temporary `api-worktree`/`gui-worktree` entries in `.claude/launch.json`, not committed) with a copy of the config folder in the session scratchpad, so the real `safe-spending.json` still has the old keys; the main checkout server on 3001 migrates it on its first load after a merge. Phase 0: `npm test` passed (22 files, 205 tests); GUI TypeScript project check passed. Phase 1: `npm test` passed (23 files, 208 tests); `npm run build` passed. Real data through 19 Oct from the local cache: spent ₪19,766.44, income ₪18,095.81; the ₪30 difference from the spec sample is the positive uncategorized transaction counted as income only per the user. Phase 2: `npm test` passed (23 files, 218 tests); root build and GUI TypeScript check passed. Use Node 24.11.1: prefix PATH with `/c/Users/Dovid L/AppData/Local/nvm/v24.11.1` (PATH default is 22.13.1). The engine now returns five keyed available-until-payday lines, follows the new payday setting and legacy migration, calculates selected essentials and partial overrides, filters bills, and excludes overdraft from card exposure.
 - `npm install` completed in the root and `gui`; `node_modules/israeli-bank-scrapers` links to `C:\Users\Dovid L\Dev\israeli-bank-scrapers`.
 - User deleted the duplicate Leumi Cards schedules and the duplicate ₪30 איחוד הצלה entry in YNAB. No YNAB writes have been made by this task.
 
@@ -26,7 +26,7 @@ Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesi
 - [x] 10 — Scrape (browser-checked with a fake event stream).
 - [x] 11 — Settings and links (quick reload after a settings change).
 - [x] 12 — Monthly report (old reports readable; Windows task unchanged).
-- [ ] 13 — Treat as refund (added 20 Oct).
+- [x] 13 — Treat as refund (YNAB write faked in the browser; not tested live).
 
 ### User decisions that override stale plan text
 

@@ -1,6 +1,6 @@
 # Implementation plan: Home redesign
 
-Status: draft, 20 Oct 2026. Nothing is built yet.
+Status: 20 Oct 2026. Phases 0–13 are built on branch `home-redesign` (one commit each; see the notes log). Not pushed or merged.
 
 ## Sources: read these first
 
