@@ -99,7 +99,7 @@ export async function getCategorizeList(
   return { categories, items: items.map((i) => ({ ...i, llm: needsLlm(i) })) };
 }
 
-export async function setCategory(token: string, transactionId: string, categoryId: string): Promise<void> {
+export async function setCategory(token: string, transactionId: string, categoryId: string | null): Promise<void> {
   await ynabRequest(token, `/budgets/${encodeURIComponent(budgetId())}/transactions`, {
     method: "PATCH",
     body: JSON.stringify({ transactions: [{ id: transactionId, category_id: categoryId }] }),

@@ -8,12 +8,11 @@ import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
+import { InboxPage } from "@/pages/InboxPage";
 import {
-  AnomaliesPanel,
   Exposure,
   Obligations,
   ReportsPanel,
-  SchedulesPanel,
   SpendingLoading,
   SpendingProvider,
   SpendingSettingsPanel,
@@ -51,10 +50,6 @@ function SubTabs({
   );
 }
 
-function Count({ n }: { n: number }) {
-  return n > 0 ? <span className="rounded-full bg-amber-100 px-1.5 text-[11px] leading-4 text-amber-800">{n}</span> : null;
-}
-
 /** Cards until phase 9: the existing credit and coming-months panels. */
 function CardsTab() {
   const { data } = useSpending();
@@ -73,7 +68,7 @@ const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
 function Shell() {
   const { data } = useSpending();
   const [tab, setTab] = useState("home");
-  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", inbox: "categorize", settings: "spending" });
+  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", settings: "spending" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
   const navigate = (t: string, v?: string) => {
     const target = OLD_TABS[t] ?? t;
@@ -83,7 +78,9 @@ function Shell() {
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
   const unusual = data?.anomalies.length ?? 0;
-  const inboxLeft = schedules + uncategorized + unusual;
+  // While the Inbox is open its own queue gives the count; otherwise the counts from the numbers.
+  const [inboxQueueLeft, setInboxQueueLeft] = useState<number | null>(null);
+  const inboxLeft = inboxQueueLeft ?? schedules + uncategorized + unusual;
 
   return (
     <div className="mx-auto max-w-[680px] px-4 py-6">
@@ -112,15 +109,11 @@ function Shell() {
         </TabsContent>
 
         <TabsContent value="inbox">
-          <SubTabs
-            value={views.inbox}
-            onChange={setView("inbox")}
-            items={[
-              { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
-              { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
-              { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
-            ]}
-          />
+          <InboxPage onLeft={setInboxQueueLeft} openList={() => setTab("categorize")} />
+        </TabsContent>
+
+        <TabsContent value="categorize">
+          <CategorizePage />
         </TabsContent>
 
         <TabsContent value="cards">

@@ -1,153 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, CalendarPlus, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  createScheduled,
   generateReport,
   getReports,
   getSpending,
-  ignoreScheduleSuggestion,
   saveSpendingSettings,
-  dismissAnomaly,
-  type Anomaly,
   type CategoryOption,
   type CreditLimitGroup,
   type Report,
   type ReportType,
-  type ScheduleSuggestion,
   type SpendingData,
 } from "@/api/client";
 import { formatDate, K, monthLabel, shekels, SpendingContext, useSpending } from "@/lib/spending";
 import { readStoredJson, writeStoredJson } from "@/lib/scrape-run";
-
-function SuggestionRow({
-  s,
-  accountName,
-  categories,
-  onDone,
-}: {
-  s: ScheduleSuggestion;
-  accountName: string;
-  categories: CategoryOption[];
-  onDone: (id: string) => void;
-}) {
-  const [payee, setPayee] = useState(s.label);
-  const [amount, setAmount] = useState(String(Math.round(s.amount / K)));
-  const [date, setDate] = useState(s.nextDate);
-  const [categoryId, setCategoryId] = useState(s.categoryId ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-      onDone(s.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-      setBusy(false);
-    }
-  };
-
-  const [open, setOpen] = useState(false);
-  const amountValue = Number(amount);
-  const valid = Boolean(payee.trim() && amountValue > 0 && date);
-  const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "No category";
-  const create = () =>
-    run(async () => {
-      await createScheduled({ accountId: s.accountId, date, amount: Math.round(amountValue * K), payeeName: payee, categoryId: categoryId || null });
-    });
-
-  // One compact line; the edit fields open below it. The line always shows the values that Create will use.
-  return (
-    <div className={cn("rounded-md border", open && "bg-muted/30")}>
-      <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
-        <button
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          title={open ? "Close" : "Edit before creating"}
-        >
-          <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
-          <span className="line-clamp-2 break-words font-medium" dir="auto">
-            {payee}
-          </span>
-          {s.amountVaries && (
-            <AlertTriangle
-              className="h-3.5 w-3.5 shrink-0 text-amber-600"
-              aria-label="Amount varies"
-            />
-          )}
-        </button>
-        <span className="shrink-0 text-right font-mono">₪{amountValue.toLocaleString("en-US")}</span>
-        <span className="hidden w-14 shrink-0 text-xs text-muted-foreground sm:block">{formatDate(date)}</span>
-        <span className="hidden w-36 shrink-0 truncate text-xs text-muted-foreground md:block" dir="auto" title={categoryName}>
-          {categoryName}
-        </span>
-        <Button size="sm" className="h-7 px-2" disabled={busy || !valid} onClick={create} title="Create a monthly scheduled transaction in YNAB">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarPlus className="h-3.5 w-3.5" />} Create
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2"
-          disabled={busy}
-          onClick={() => run(() => ignoreScheduleSuggestion(s.id))}
-          title="Ignore this suggestion"
-          aria-label="Ignore"
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      {open && (
-        <div className="space-y-2 border-t px-3 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input value={payee} onChange={(e) => setPayee(e.target.value)} dir="auto" className="h-8 min-w-48 flex-1" aria-label="Payee" />
-            <div className="flex items-center gap-1">
-              <span className="text-sm text-muted-foreground">₪</span>
-              <Input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
-                inputMode="decimal"
-                className="h-8 w-24 text-right"
-                aria-label="Amount"
-              />
-            </div>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="First date" />
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              aria-label="Category"
-            >
-              <option value="">No category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.group} / {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Monthly · {accountName} · seen in {s.months} of the last 4 months
-          </p>
-          {s.amountVaries && (
-            <p className="flex items-start gap-1 text-xs text-amber-700">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> The amount changed between months. YNAB matches an
-              imported transaction to a scheduled one only when the amount is exactly the same, so you may get a duplicate.
-            </p>
-          )}
-        </div>
-      )}
-      {error && <p className="px-3 pb-2 text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
 
 const REPORT_INFO: Record<ReportType, { name: string; when: string }> = {
   weekly: { name: "Weekly", when: "Every Sunday at 10:00" },
@@ -597,7 +466,7 @@ function SettingsPanel({ data, onSaved }: { data: SpendingData; onSaved: () => v
   );
 }
 
-// --- Shared data for Home, Review, Reports, and Setup ---
+// --- Shared data for Home, Inbox, Cards, and Settings ---
 
 const CACHE_KEY = "spending.data.v2";
 
@@ -664,97 +533,8 @@ export function SpendingLoading() {
   );
 }
 
-export function SchedulesPanel() {
-  const { data, removeSuggestion } = useSpending();
-  if (!data) return <SpendingLoading />;
-  const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "";
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Repeating payments without a schedule</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Create makes a monthly scheduled transaction in YNAB with the values on the line. Click a name to edit it first.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-1.5">
-        {data.suggestions.length === 0 && (
-          <p className="py-4 text-center text-sm text-muted-foreground">Every repeating payment has a schedule.</p>
-        )}
-        {data.suggestions.map((s) => (
-          <SuggestionRow key={s.id} s={s} accountName={accountName(s.accountId)} categories={data.categories} onDone={removeSuggestion} />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function SpendingSettingsPanel() {
   const { data, reload } = useSpending();
   if (!data) return <SpendingLoading />;
   return <SettingsPanel key={JSON.stringify(data.settings)} data={data} onSaved={reload} />;
-}
-
-const ANOMALY_LABEL: Record<Anomaly["kind"], string> = {
-  "unusual-charge": "Unusual charge",
-  "new-payee": "New payee",
-  duplicate: "Possible duplicate",
-  "category-spike": "Category over normal",
-  "price-increase": "Price went up",
-};
-
-/** Unusual things from the last 30 days. Dismiss hides a finding for good (it never writes to YNAB). */
-export function AnomaliesPanel() {
-  const { data, reload } = useSpending();
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [error, setError] = useState("");
-  if (!data) return <SpendingLoading />;
-  const list = data.anomalies.filter((a) => !hidden.has(a.id));
-
-  const dismiss = async (id: string) => {
-    setHidden((h) => new Set(h).add(id));
-    setError("");
-    try {
-      await dismissAnomaly(id);
-      reload();
-    } catch (e) {
-      setHidden((h) => {
-        const next = new Set(h);
-        next.delete(id);
-        return next;
-      });
-      setError(e instanceof Error ? e.message : "Dismiss failed");
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Unusual in the last 30 days</CardTitle>
-        <p className="text-xs text-muted-foreground">Things worth a look. Dismiss one when it is fine; it will not come back.</p>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </CardHeader>
-      <CardContent className="divide-y">
-        {list.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Nothing unusual.</p>}
-        {list.map((a) => (
-          <div key={a.id} className="flex items-start gap-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">{ANOMALY_LABEL[a.kind]}</span>
-                <span className="text-xs text-muted-foreground">{formatDate(a.date)}</span>
-              </div>
-              <p className="mt-0.5 text-sm font-medium" dir="auto">
-                {a.title.replace(/^[^:]+: /, "")}
-              </p>
-              <p className="text-xs text-muted-foreground" dir="auto">
-                {a.detail}
-              </p>
-            </div>
-            <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" onClick={() => dismiss(a.id)}>
-              <X className="h-3.5 w-3.5" /> Dismiss
-            </Button>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
 }

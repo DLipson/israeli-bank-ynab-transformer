@@ -92,7 +92,7 @@ function SuggestionRow({
   );
 }
 
-function CategoryPicker({
+export function CategoryPicker({
   categories,
   disabled,
   onPick,

@@ -279,7 +279,8 @@ export async function getLlmSuggestions(ids: string[]): Promise<Record<string, C
   })).suggestions;
 }
 
-export async function acceptCategory(id: string, categoryId: string): Promise<void> {
+/** YNAB write. categoryId null clears the category (Inbox Undo only). */
+export async function acceptCategory(id: string, categoryId: string | null): Promise<void> {
   await request("/categorize/accept", { method: "POST", body: JSON.stringify({ id, categoryId }) });
 }
 

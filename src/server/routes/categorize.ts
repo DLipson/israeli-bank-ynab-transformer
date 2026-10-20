@@ -63,7 +63,8 @@ router.post(
   "/accept",
   handle(async (req) => {
     const { id, categoryId } = req.body as { id?: unknown; categoryId?: unknown };
-    await setCategory(token(), requireString(id, "id"), requireString(categoryId, "categoryId"));
+    // null clears the category: Inbox Undo of an accept on an uncategorized transaction.
+    await setCategory(token(), requireString(id, "id"), categoryId === null ? null : requireString(categoryId, "categoryId"));
     return { ok: true };
   })
 );
