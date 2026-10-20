@@ -9,7 +9,7 @@ import {
   loadSettings,
   saveSettings,
 } from "../../engine/safe-spending-service.js";
-import type { CreditLimitGroup, Settings } from "../../engine/safe-spending.js";
+import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
 import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
 import type { ReportType } from "../../engine/reports.js";
 import { getReconcile } from "../../engine/reconcile-service.js";
@@ -41,16 +41,22 @@ function checkGroup(g: unknown): CreditLimitGroup {
 
 /** Only known fields with valid values are saved; ignored suggestions change through POST /ignore. */
 function checkSettings(body: unknown, current: Settings): Settings {
-  const b = body as Partial<Settings>;
+  const b = body as Partial<Settings> & { periodEnd?: unknown };
   const next = { ...current };
+  if (b.periodEnd !== undefined && b.payday === undefined) {
+    const oldPeriodEnd = b.periodEnd;
+    const ok = oldPeriodEnd === "month-end" || (Number.isInteger(oldPeriodEnd) && Number(oldPeriodEnd) >= 1 && Number(oldPeriodEnd) <= 31);
+    if (!ok) throw new Error('periodEnd must be "month-end" or a day from 1 to 31.');
+    next.payday = paydayFromPeriodEnd(oldPeriodEnd as "month-end" | number);
+  }
   if (b.mode !== undefined) {
     if (b.mode !== "cashflow" && b.mode !== "ynab") throw new Error("mode must be cashflow or ynab.");
     next.mode = b.mode;
   }
-  if (b.periodEnd !== undefined) {
-    const ok = b.periodEnd === "month-end" || (Number.isInteger(b.periodEnd) && b.periodEnd >= 1 && b.periodEnd <= 31);
-    if (!ok) throw new Error('periodEnd must be "month-end" or a day from 1 to 31.');
-    next.periodEnd = b.periodEnd;
+  if (b.payday !== undefined) {
+    const ok = b.payday === "month-start" || (Number.isInteger(b.payday) && b.payday >= 1 && b.payday <= 31);
+    if (!ok) throw new Error('payday must be "month-start" or a day from 1 to 31.');
+    next.payday = b.payday;
   }
   if (b.buffer !== undefined) {
     if (!isMoney(b.buffer)) throw new Error("buffer must be 0 or more.");
@@ -71,17 +77,6 @@ function checkSettings(body: unknown, current: Settings): Settings {
       throw new Error("baselineMonths must be a whole number from 1 to 24.");
     }
     next.baselineMonths = b.baselineMonths;
-  }
-  if (b.subtractExpected !== undefined) {
-    if (typeof b.subtractExpected !== "boolean") throw new Error("subtractExpected must be true or false.");
-    next.subtractExpected = b.subtractExpected;
-  }
-  if (b.overdraft !== undefined) {
-    const o = b.overdraft;
-    if (o !== null && (typeof o?.limitAccountId !== "string" || typeof o?.accountId !== "string")) {
-      throw new Error("overdraft must be null or { limitAccountId, accountId }.");
-    }
-    next.overdraft = o;
   }
   return next;
 }

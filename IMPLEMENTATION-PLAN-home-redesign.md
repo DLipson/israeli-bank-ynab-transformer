@@ -91,10 +91,11 @@ Goal: the Home main number follows the spec rules.
 ## Phase 2: engine, available until payday
 
 1. **Settings changes** (trap 12):
-   - `essentialCategoryIds: string[]` (default `[]`). Replaces the meaning of `flexibleCategoryIds`.
-   - `essentialsOverride: { period: string; amounts: Record<string, number> } | null`. `period` is the period end date. An edit applies to that period only; a new period ignores it.
+   - `essentialCategoryIds: string[]` (default `[]`). A new, separate key. Do not migrate `flexibleCategoryIds` into it: that key stays unchanged for the hidden YNAB-categories mode, and today it holds Clothing/Shoes and Groceries, which is not the essentials list (decided 20 Oct). The user chooses the essentials in Settings.
+   - `essentialsOverride: { period: string; amounts: Record<string, number> } | null`. `period` is the period end date. An edit applies to that period only; a new period ignores it. A category that is not in `amounts` uses its calculated amount, not 0 (decided 20 Oct).
    - `cardWarningLevel: number` (default `1_000_000` milliunits = ₪1,000).
    - Ignore `overdraft` and `subtractExpected` if present; do not write them again.
+   - **Payday replaces the period end (decided 20 Oct).** New key `payday: "month-start" | number` (a day of the month, 1–31). The period ends the day before payday. Migrate the old `periodEnd` once: `"month-end"` → `payday: "month-start"` (the period still ends on the last day of the month); a number N → `payday: N + 1`; N = 31 → `"month-start"`; N = 28–30 → N + 1, clamped to the last day in short months (payday 30 in February is 28 Feb). Keep `periodEndDate()` returning the inclusive last day, now computed from `payday`. The user has `periodEnd: "month-end"` today.
 2. `leftCashflow()` lines, in this order and with these keys: `cash`, `cards`, `bills`, `essentials`, `buffer`.
    - `essentials`: for each essential category, YNAB assigned − spent this month (minimum 0) if assigned > 0; else `expectedRest()` for that category only. Use the override if its `period` is this period end.
    - No essentials chosen: the line is 0, and `essentialsNotChosen` is true.
@@ -245,6 +246,7 @@ interface SpendingDataAdditions {
 
 /** New fields on Settings. */
 interface SettingsAdditions {
+  payday: "month-start" | number;  // replaces periodEnd; the period ends the day before
   essentialCategoryIds: string[];
   essentialsOverride: { period: string; amounts: Record<string, number> } | null;
   cardWarningLevel: number;
@@ -316,13 +318,25 @@ interface SettingsAdditions {
 
 **Done when:** `npm run report:spending` makes the monthly report; an old saved report still opens; the Home link opens the newest report.
 
+## Phase 13: Treat as refund
+
+Goal: an uncategorized positive transaction that counts as income can become a refund, by the user's click only.
+
+1. On Home, in the spent-vs-income drill-down, each uncategorized positive income item has a small "Treat as refund" action.
+2. The action opens a list of recent purchases (outflows in the last 90 days, newest first, with a search box). The user picks one purchase.
+3. On confirm: set the positive transaction's YNAB category to the category of the picked purchase (YNAB write, only on this click). Then store `{ refundTxId, purchaseTxId }` in local settings (`refundLinks`). A purchase with a split or no category cannot be picked.
+4. After the write, the transaction is a refund: it is a negative spending item, not income (existing rules).
+5. The drill-down shows the link: "Refund of <payee>, <date>".
+
+**Done when:** an engine/route test (YNAB call mocked) proves the category update and the saved link; the income total drops and spent drops by the amount in a test; the action is visible in the drill-down in the browser with YNAB writes blocked. Live write only with the user's OK.
+
 ## Order and dependencies
 
 ```
 Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 9 → 11
                               ↘ 8 (needs 5)
                               ↘ 10 (needs 6)
-                                  12 last
+                                  12 → 13
 ```
 
 Phases 1–4 are engine only and can be tested without the GUI. Phase 7 (Home) is the first visible result.
@@ -330,3 +344,15 @@ Phases 1–4 are engine only and can be tested without the GUI. Phase 7 (Home) i
 ## Decisions from the user
 
 Answered 20 Oct: one-time income comes from history (phase 1, step 4); month-end income counts toward the next month only (phase 0, step 3); YNAB-categories mode stays in the code but is hidden (phase 7); reports open from a link on Home (phase 12); Things to watch has no memory: an item shows while it is true.
+
+Answered later (20 Oct):
+- Income in the drill-down is grouped by payer. Each transaction shows its date and its one-time label.
+- The spent-vs-income drill-down includes the full list of spending transactions.
+- Transfers to savings count from any source account.
+- An uncategorized positive transaction counts as income. "Treat as refund" (phase 13) can turn it into a refund.
+- Bills still to come: skip scheduled transfers (`transfer_account_id`), keep only dates from today to the period end, and skip a schedule already matched by a transaction on the same account (similar payee, amount within 25%, date within 5 days).
+- Inbox Undo lives in browser memory only. The server deletes only schedule ids that it saved in `settings.createdScheduleIds`.
+- Essentials override: a category missing from the override uses its calculated amount.
+- `essentialCategoryIds` starts empty. `flexibleCategoryIds` is not migrated and stays for the hidden YNAB-categories mode.
+- `payday` replaces `periodEnd`. The period ends the day before payday. Migration: `"month-end"` → `"month-start"`; N → N + 1; N = 31 → `"month-start"`; N = 28–30 → N + 1, clamped in short months.
+- Duplicate schedules: one posted transaction clears only one schedule. The duplicate stays visible.

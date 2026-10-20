@@ -11,7 +11,7 @@ import {
   readMemoFields,
   type YnabTransaction,
 } from "../ynab/categorize.js";
-import { expectedRest, predictItems, spendItems } from "./baseline.js";
+import { expectedRest, predictItems, similarPayee, spendItems } from "./baseline.js";
 import { parseChargeDate } from "./charge-date.js";
 
 export interface Account {
@@ -29,6 +29,7 @@ export interface MonthCategory {
   name: string;
   category_group_name: string;
   balance: number;
+  budgeted: number;
   hidden: boolean;
   deleted: boolean;
 }
@@ -61,6 +62,7 @@ export interface ScheduledTransaction {
   frequency: Frequency;
   amount: number;
   account_id: string;
+  transfer_account_id?: string | null;
   payee_name: string | null;
   category_id?: string | null;
   category_name: string | null;
@@ -75,36 +77,65 @@ export interface CreditLimitGroup {
 
 export interface Settings {
   mode: "cashflow" | "ynab";
-  /** "month-end", or a day of the month (1-31). */
-  periodEnd: "month-end" | number;
+  payday: "month-start" | number;
   buffer: number;
   /** Mode B. Empty = every spending category. */
   flexibleCategoryIds: string[];
+  essentialCategoryIds: string[];
+  essentialsOverride: { period: string; amounts: Record<string, number> } | null;
+  cardWarningLevel: number;
   creditLimits: CreditLimitGroup[];
-  /** The checking account whose balance is the overdraft limit ("Credit Limit"), and the overdrawn account. */
-  overdraft: { limitAccountId: string; accountId: string } | null;
   /** Suggested scheduled transactions the user ignored, as "accountId|identityKey". */
   ignoredSuggestions: string[];
   /** Full past months the baseline uses. */
   baselineMonths: number;
-  /** Cash-flow subtracts normal spending from tomorrow to the period end. */
-  subtractExpected: boolean;
   /** Anomaly findings the user dismissed, by id. */
   dismissedAnomalies: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   mode: "cashflow",
-  periodEnd: "month-end",
+  payday: "month-start",
   buffer: 0,
   flexibleCategoryIds: [],
+  essentialCategoryIds: [],
+  essentialsOverride: null,
+  cardWarningLevel: 1_000_000,
   creditLimits: [],
-  overdraft: null,
   ignoredSuggestions: [],
   baselineMonths: 6,
-  subtractExpected: true,
   dismissedAnomalies: [],
 };
+
+/** Convert a saved inclusive end day to the following payday; month-end and day 31 become month-start. */
+export function paydayFromPeriodEnd(periodEnd: "month-end" | number): "month-start" | number {
+  if (periodEnd === "month-end" || !Number.isInteger(periodEnd) || periodEnd < 1 || periodEnd >= 31) {
+    return "month-start";
+  }
+  return periodEnd + 1;
+}
+
+/** Load current settings while dropping keys removed from the on-disk format. */
+export function settingsFromSaved(
+  saved: Partial<Settings> & {
+    periodEnd?: "month-end" | number;
+    overdraft?: unknown;
+    subtractExpected?: unknown;
+  } = {}
+): Settings {
+  const current = { ...saved };
+  const oldPeriodEnd = current.periodEnd;
+  delete current.periodEnd;
+  delete current.overdraft;
+  delete current.subtractExpected;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...current,
+    payday:
+      current.payday ??
+      (oldPeriodEnd === undefined ? DEFAULT_SETTINGS.payday : paydayFromPeriodEnd(oldPeriodEnd)),
+  } as Settings;
+}
 
 export interface Snapshot {
   today: string;
@@ -120,10 +151,32 @@ export interface Line {
   amount: number;
 }
 
+export interface AvailableItem {
+  label: string;
+  amount: number;
+  date?: string;
+  txId?: string;
+  categoryId?: string;
+  assigned?: number;
+  normal?: number;
+}
+
+export interface AvailableLine extends Line {
+  key: "cash" | "cards" | "bills" | "essentials" | "buffer";
+  items: AvailableItem[];
+}
+
 export interface LeftToSpend {
   total: number;
   lines: Line[];
   warnings: string[];
+}
+
+export interface AvailableUntilPayday extends LeftToSpend {
+  periodEnd: string;
+  lines: AvailableLine[];
+  essentialsNotChosen: boolean;
+  essentialsOverridden: boolean;
 }
 
 // --- Dates (ISO yyyy-mm-dd, no time zones) ---
@@ -156,12 +209,12 @@ function addDays(date: string, n: number): string {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
-export function periodEndDate(today: string, periodEnd: Settings["periodEnd"]): string {
+export function periodEndDate(today: string, payday: Settings["payday"]): string {
   const [y, m, d] = parts(today);
-  if (periodEnd === "month-end") return dayIn(y, m, 31);
-  if (periodEnd >= d) return dayIn(y, m, periodEnd);
-  const [ny, nm] = addMonths(y, m, 1);
-  return dayIn(ny, nm, periodEnd);
+  if (payday === "month-start") return dayIn(y, m, 31);
+  // Compare the clamped payday: payday 30 is 28 Feb in February.
+  const [py, pm] = Math.min(payday, daysInMonth(y, m)) > d ? [y, m] : addMonths(y, m, 1);
+  return addDays(dayIn(py, pm, payday), -1);
 }
 
 // --- Scheduled transactions ---
@@ -380,28 +433,103 @@ function openOnBudget(accounts: Account[]): Account[] {
 
 // --- Mode A: cash-flow ---
 
-export function leftCashflow(snapshot: Snapshot): LeftToSpend {
+export function leftCashflow(snapshot: Snapshot): AvailableUntilPayday {
   const accounts = openOnBudget(snapshot.accounts);
-  const end = periodEndDate(snapshot.today, snapshot.settings.periodEnd);
-  const lines: Line[] = [];
-  for (const a of accounts.filter((x) => MONEY_TYPES.has(x.type))) lines.push({ label: a.name, amount: a.balance });
-  for (const a of accounts.filter((x) => OWED_TYPES.has(x.type) && x.balance !== 0)) {
-    lines.push({ label: `${a.name} (card balance)`, amount: a.balance });
-  }
-  // YNAB enters a scheduled transaction on its date, so from today on it has not been entered yet.
-  for (const s of scheduledOutflows(snapshot.scheduled, snapshot.today, end)) {
-    lines.push({ label: `${s.label} (scheduled, ${s.date})`, amount: -s.amount });
-  }
-  if (snapshot.settings.subtractExpected) {
-    const items = predictItems(spendItems(snapshot.transactions), snapshot.scheduled);
-    const expected = expectedRest(items, snapshot.today, end, snapshot.settings.baselineMonths);
-    if (expected) lines.push({ label: `Expected normal spending until ${end} (median of ${snapshot.settings.baselineMonths} months)`, amount: -expected });
-  }
-  if (snapshot.settings.buffer) lines.push({ label: "Buffer", amount: -snapshot.settings.buffer });
+  const end = periodEndDate(snapshot.today, snapshot.settings.payday);
+  const cash = accounts
+    .filter((a) => MONEY_TYPES.has(a.type))
+    .map((a) => ({ label: a.name, amount: a.balance }));
+  const cards = accounts
+    .filter((a) => OWED_TYPES.has(a.type) && a.balance !== 0)
+    .map((a) => ({ label: `${a.name} (card balance)`, amount: a.balance }));
+  // One posted transaction clears one schedule date only, so a duplicate schedule stays visible.
+  const usedTxIds = new Set<string>();
+  const bills = snapshot.scheduled
+    .flatMap((s) => {
+      if (s.deleted || s.transfer_account_id || s.amount >= 0) return [];
+      const label = s.payee_name ?? s.category_name ?? "Scheduled";
+      return occurrences(s, end)
+        .filter((date) => date >= snapshot.today)
+        .map((date) => ({ s, label, date }));
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter(({ s, date }) => {
+      const match = snapshot.transactions.find(
+        (t) =>
+          !t.deleted &&
+          !usedTxIds.has(t.id) &&
+          !t.transfer_account_id &&
+          t.account_id === s.account_id &&
+          similarPayee(t.payee_name, s.payee_name) &&
+          Math.abs(Math.abs(t.amount) - Math.abs(s.amount)) <= Math.abs(s.amount) * 0.25 &&
+          Math.abs(Date.parse(`${t.date}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) <= 5 * 86400000
+      );
+      if (match) usedTxIds.add(match.id);
+      return !match;
+    })
+    .map(({ s, label, date }) => ({ label, amount: s.amount, date }));
+
+  const allItems = spendItems(snapshot.transactions);
+  const predictedItems = predictItems(allItems, snapshot.scheduled);
+  const categories = spendingCategories(snapshot.month);
+  const override = snapshot.settings.essentialsOverride;
+  let essentialsOverridden = false;
+  const essentials = snapshot.settings.essentialCategoryIds.flatMap((categoryId) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return [];
+    const spent = allItems
+      .filter(
+        (item) =>
+          item.categoryId === categoryId &&
+          item.date >= snapshot.month.month &&
+          item.date <= snapshot.today
+      )
+      .reduce((sum, item) => sum + item.amount, 0);
+    const assigned = category.budgeted;
+    const normal =
+      assigned > 0
+        ? 0
+        : expectedRest(
+            predictedItems.filter((item) => item.categoryId === categoryId),
+            snapshot.today,
+            end,
+            snapshot.settings.baselineMonths
+          );
+    const calculated = assigned > 0 ? Math.max(0, assigned - spent) : normal;
+    const hasOverride = override?.period === end && Object.hasOwn(override.amounts, categoryId);
+    if (hasOverride) essentialsOverridden = true;
+    const amount = hasOverride ? override!.amounts[categoryId] : calculated;
+    return [
+      {
+        label: category.name,
+        amount: amount ? -amount : 0,
+        categoryId,
+        ...(assigned > 0 ? { assigned } : {}),
+        ...(normal > 0 ? { normal } : {}),
+      },
+    ];
+  });
+  const buffer = snapshot.settings.buffer
+    ? [{ label: "Buffer", amount: -snapshot.settings.buffer }]
+    : [];
+  const lines: AvailableLine[] = [
+    { key: "cash", label: "Cash", amount: cash.reduce((sum, item) => sum + item.amount, 0), items: cash },
+    { key: "cards", label: "Card balance", amount: cards.reduce((sum, item) => sum + item.amount, 0), items: cards },
+    { key: "bills", label: "Bills still to come", amount: bills.reduce((sum, item) => sum + item.amount, 0), items: bills },
+    { key: "essentials", label: "Everyday essentials", amount: essentials.reduce((sum, item) => sum + item.amount, 0), items: essentials },
+    { key: "buffer", label: "Buffer", amount: buffer.reduce((sum, item) => sum + item.amount, 0), items: buffer },
+  ];
   const warnings = snapshot.scheduled.some((s) => !s.deleted && s.amount < 0)
     ? []
     : ["No scheduled transactions in YNAB yet, so no fixed payments are subtracted."];
-  return { total: lines.reduce((s, l) => s + l.amount, 0), lines, warnings };
+  return {
+    periodEnd: end,
+    total: lines.reduce((sum, line) => sum + line.amount, 0),
+    lines,
+    warnings,
+    essentialsNotChosen: snapshot.settings.essentialCategoryIds.length === 0,
+    essentialsOverridden,
+  };
 }
 
 // --- Mode B: YNAB categories ---
@@ -440,20 +568,6 @@ export function creditExposure(snapshot: Snapshot): ExposureGroup[] {
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const plans = installmentPlans(snapshot.transactions, snapshot.today);
   const groups: ExposureGroup[] = [];
-
-  const { overdraft } = snapshot.settings;
-  const limitAccount = overdraft && byId.get(overdraft.limitAccountId);
-  const usedAccount = overdraft && byId.get(overdraft.accountId);
-  if (limitAccount && usedAccount) {
-    const used = Math.max(0, -usedAccount.balance);
-    groups.push({
-      name: "Overdraft",
-      limit: limitAccount.balance,
-      used,
-      unused: limitAccount.balance - used,
-      lines: [{ label: usedAccount.name, amount: used }],
-    });
-  }
 
   const configured = snapshot.settings.creditLimits;
   const grouped = new Set(configured.flatMap((g) => g.accountIds));

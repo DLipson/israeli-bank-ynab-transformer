@@ -18,6 +18,7 @@ import {
   type Month,
   type ScheduledTransaction,
   type Settings,
+  settingsFromSaved,
   type Snapshot,
 } from "./safe-spending.js";
 import { baseline, pastMonths, spendItems } from "./baseline.js";
@@ -33,23 +34,15 @@ function settingsPath(): string {
 export function loadSettings(): Settings {
   const path = settingsPath();
   if (!existsSync(path)) return { ...DEFAULT_SETTINGS };
-  return { ...DEFAULT_SETTINGS, ...(JSON.parse(readFileSync(path, "utf-8")) as Partial<Settings>) };
+  const saved = JSON.parse(readFileSync(path, "utf-8")) as NonNullable<Parameters<typeof settingsFromSaved>[0]>;
+  const settings = settingsFromSaved(saved);
+  if (["periodEnd", "overdraft", "subtractExpected"].some((key) => Object.hasOwn(saved, key))) saveSettings(settings);
+  return settings;
 }
 
 export function saveSettings(settings: Settings): void {
   ensureAppConfigDirExists();
-  writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), "utf-8");
-}
-
-/**
- * First-run guess for the overdraft: the open checking account named like "Credit Limit" holds the
- * limit, and the most overdrawn checking account uses it. Shown in the UI so the user can change it.
- */
-function guessOverdraft(accounts: Account[]): Settings["overdraft"] {
-  const open = accounts.filter((a) => a.type === "checking" && !a.closed && !a.deleted);
-  const limit = open.find((a) => /credit limit|מסגרת/i.test(a.name));
-  const used = open.filter((a) => a.id !== limit?.id).sort((a, b) => a.balance - b.balance)[0];
-  return limit && used && used.balance < 0 ? { limitAccountId: limit.id, accountId: used.id } : null;
+  writeFileSync(settingsPath(), JSON.stringify(settingsFromSaved(settings), null, 2), "utf-8");
 }
 
 function budgetPath(): string {
@@ -79,13 +72,12 @@ export async function getSpending(token: string, today = new Date().toISOString(
   ]);
 
   const settings = loadSettings();
-  if (!settings.overdraft) settings.overdraft = guessOverdraft(accounts);
   const lastScrapedAt = lastSuccessfulScrapeAt(listRuns());
 
   const snapshot: Snapshot = { today, accounts, month, transactions, scheduled, settings };
   const cashflow = leftCashflow(snapshot);
   const ynab = leftYnab(snapshot);
-  const end = periodEndDate(today, settings.periodEnd);
+  const end = periodEndDate(today, settings.payday);
   const items = spendItems(transactions);
   const spendBaseline = baseline(items, dataAsOf(transactions, today), settings.baselineMonths);
   const previous = pastMonths(today, 1)[0];
