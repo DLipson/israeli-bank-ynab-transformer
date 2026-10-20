@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
-import { cardGroups } from "./cards.js";
+import { cardGroups, watchItems } from "./cards.js";
 import { DEFAULT_SETTINGS, type Account, type Snapshot } from "./safe-spending.js";
 
 const K = 1000;
@@ -111,5 +111,29 @@ describe("cardGroups", () => {
     const group = cardGroups(s).find((g) => g.name === "Isracard")!;
     expect(group.nextPayment.newPurchases.amount).toBe(500 * K);
     expect(group.nextPayment.newPurchases.items).toContainEqual(expect.objectContaining({ payee: "Earlier balance and adjustments", amount: -70 * K }));
+  });
+});
+
+describe("watchItems", () => {
+  it("lists low and over card groups and essentials over pace, and nothing else", () => {
+    const essential = (categoryId: string, thisMonth: number, compareTo: number, type: "essential" | "occasional" = "essential") => ({
+      categoryId,
+      name: categoryId,
+      type,
+      thisMonth: thisMonth * K,
+      compareTo: compareTo * K,
+      compareLabel: "normal by this day" as const,
+      difference: (thisMonth - compareTo) * K,
+      items: [],
+    });
+    const groups = cardGroups(snapshot(3500));
+    const items = watchItems(groups, [essential("groceries", 900, 500), essential("fuel", 520, 500), essential("clothing", 900, 100, "occasional")]);
+    expect(items).toEqual([
+      { kind: "card-low", label: "Cal: only ₪800 left", target: { tab: "cards", group: "Cal" } },
+      { kind: "essential-over-pace", label: "groceries: ₪400 over the normal by this day", target: { tab: "home", categoryId: "groceries" } },
+    ]);
+    expect(watchItems(cardGroups(snapshot()), [])).toEqual([
+      { kind: "card-over", label: "Cal: ₪700 over the limit", target: { tab: "cards", group: "Cal" } },
+    ]);
   });
 });

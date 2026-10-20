@@ -3,11 +3,15 @@ import { loadAppEnv } from "../../env.js";
 import { getYnabToken } from "../../ynab/import-service.js";
 import {
   createScheduled,
+  deleteCreatedScheduled,
   dismissAnomaly,
   getSpending,
   ignoreSuggestion,
   loadSettings,
+  restoreAnomaly,
+  restoreSuggestion,
   saveSettings,
+  spendingCategoryIds,
 } from "../../engine/safe-spending-service.js";
 import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
 import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
@@ -39,8 +43,12 @@ function checkGroup(g: unknown): CreditLimitGroup {
   return { name: group.name.trim(), limit: group.limit, accountIds: group.accountIds };
 }
 
-/** Only known fields with valid values are saved; ignored suggestions change through POST /ignore. */
-function checkSettings(body: unknown, current: Settings): Settings {
+/**
+ * Only known fields with valid values are saved; ignored suggestions change through POST /ignore,
+ * and createdScheduleIds only through POST /scheduled. `categoryIds` reads YNAB only when the body
+ * names categories.
+ */
+async function checkSettings(body: unknown, current: Settings, categoryIds: () => Promise<Set<string>>): Promise<Settings> {
   const b = body as Partial<Settings> & { periodEnd?: unknown };
   const next = { ...current };
   if (b.periodEnd !== undefined && b.payday === undefined) {
@@ -72,6 +80,34 @@ function checkSettings(body: unknown, current: Settings): Settings {
     const ids = next.creditLimits.flatMap((g) => g.accountIds);
     if (new Set(ids).size !== ids.length) throw new Error("A card can be in only one credit limit group.");
   }
+  if (b.cardWarningLevel !== undefined) {
+    if (!isMoney(b.cardWarningLevel)) throw new Error("cardWarningLevel must be 0 or more.");
+    next.cardWarningLevel = b.cardWarningLevel;
+  }
+  if (b.essentialCategoryIds !== undefined || b.essentialsOverride) {
+    const known = await categoryIds();
+    const unknown = (ids: string[]) => ids.find((id) => !known.has(id));
+    if (b.essentialCategoryIds !== undefined) {
+      if (!isStringList(b.essentialCategoryIds)) throw new Error("essentialCategoryIds must be a list.");
+      const bad = unknown(b.essentialCategoryIds);
+      if (bad) throw new Error(`Unknown category: ${bad}.`);
+      next.essentialCategoryIds = [...new Set(b.essentialCategoryIds)];
+    }
+    if (b.essentialsOverride) {
+      const o = b.essentialsOverride as Partial<NonNullable<Settings["essentialsOverride"]>>;
+      if (typeof o.period !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(o.period)) {
+        throw new Error("essentialsOverride needs a period (yyyy-mm-dd).");
+      }
+      if (typeof o.amounts !== "object" || o.amounts === null || Array.isArray(o.amounts)) {
+        throw new Error("essentialsOverride needs amounts.");
+      }
+      const bad = unknown(Object.keys(o.amounts));
+      if (bad) throw new Error(`Unknown category: ${bad}.`);
+      if (!Object.values(o.amounts).every(isMoney)) throw new Error("Each essentials amount must be 0 or more.");
+      next.essentialsOverride = { period: o.period, amounts: o.amounts };
+    }
+  }
+  if (b.essentialsOverride === null) next.essentialsOverride = null;
   if (b.baselineMonths !== undefined) {
     if (!Number.isInteger(b.baselineMonths) || b.baselineMonths < 1 || b.baselineMonths > 24) {
       throw new Error("baselineMonths must be a whole number from 1 to 24.");
@@ -91,8 +127,11 @@ router.get(
 
 router.put(
   "/settings",
-  handle((req) => {
-    const next = checkSettings(req.body, loadSettings());
+  handle(async (req) => {
+    const next = await checkSettings(req.body, loadSettings(), () => {
+      loadAppEnv({ override: true });
+      return spendingCategoryIds(getYnabToken());
+    });
     saveSettings(next);
     return next;
   })
@@ -110,16 +149,30 @@ router.post(
     if (typeof b.payeeName !== "string" || !b.payeeName.trim()) throw new Error("payeeName is required.");
     if (b.categoryId !== null && typeof b.categoryId !== "string") throw new Error("categoryId must be a string or null.");
     loadAppEnv({ override: true });
-    await createScheduled(getYnabToken(), {
+    const id = await createScheduled(getYnabToken(), {
       accountId: b.accountId,
       date: b.date,
       amount: b.amount,
       payeeName: b.payeeName.trim(),
       categoryId: b.categoryId,
     });
+    return { ok: true, id };
+  })
+);
+
+/** Inbox Undo: deletes a schedule in YNAB that this app created (YNAB write, user's click only). */
+router.delete(
+  "/scheduled/:id",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    await deleteCreatedScheduled(getYnabToken(), String(req.params.id));
     return { ok: true };
   })
 );
+
+router.post("/anomalies/:id/restore", handle((req) => restoreAnomaly(String(req.params.id))));
+
+router.post("/suggestions/:id/restore", handle((req) => restoreSuggestion(String(req.params.id))));
 
 router.post(
   "/ignore",

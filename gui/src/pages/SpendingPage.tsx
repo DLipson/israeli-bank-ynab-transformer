@@ -132,9 +132,9 @@ function SuggestionRow({
   const valid = Boolean(payee.trim() && amountValue > 0 && date);
   const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "No category";
   const create = () =>
-    run(() =>
-      createScheduled({ accountId: s.accountId, date, amount: Math.round(amountValue * K), payeeName: payee, categoryId: categoryId || null })
-    );
+    run(async () => {
+      await createScheduled({ accountId: s.accountId, date, amount: Math.round(amountValue * K), payeeName: payee, categoryId: categoryId || null });
+    });
 
   // One compact line; the edit fields open below it. The line always shows the values that Create will use.
   return (

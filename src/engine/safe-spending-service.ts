@@ -25,6 +25,7 @@ import { baseline, pastMonths, spendItems } from "./baseline.js";
 import { monthlyFlowFor } from "./monthly-flow.js";
 import { spentVsIncomeFor } from "./spent-vs-income.js";
 import { categoryComparisons, whatPushedOver } from "./category-comparisons.js";
+import { cardGroups, watchItems } from "./cards.js";
 import { detectAnomalies } from "./anomalies.js";
 import { isUncategorized } from "../ynab/categorize.js";
 
@@ -77,6 +78,7 @@ export async function getSpending(token: string, today = new Date().toISOString(
 
   const snapshot: Snapshot = { today, accounts, month, transactions, scheduled, settings };
   const cashflow = leftCashflow(snapshot);
+  const cards = cardGroups(snapshot);
   const ynab = leftYnab(snapshot);
   const end = periodEndDate(today, settings.payday);
   const items = spendItems(transactions);
@@ -105,6 +107,9 @@ export async function getSpending(token: string, today = new Date().toISOString(
     periodEnd: end,
     monthlyFlow,
     spentVsIncome,
+    available: cashflow,
+    cards,
+    watch: watchItems(cards, comparisons),
     settings,
     cashflow,
     ynab,
@@ -152,9 +157,15 @@ export interface NewScheduled {
   categoryId: string | null;
 }
 
-/** Creates a monthly scheduled outflow in YNAB. Called only from the user's click. */
-export async function createScheduled(token: string, s: NewScheduled): Promise<void> {
-  await ynabRequest(token, `${budgetPath()}/scheduled_transactions`, {
+/** Spending category ids of the current YNAB month, to validate settings. */
+export async function spendingCategoryIds(token: string): Promise<Set<string>> {
+  const { month } = await ynabRequest<{ month: Month }>(token, `${budgetPath()}/months/current`);
+  return new Set(spendingCategories(month).map((c) => c.id));
+}
+
+/** Creates a monthly scheduled outflow in YNAB and records its id. Called only from the user's click. */
+export async function createScheduled(token: string, s: NewScheduled): Promise<string> {
+  const { scheduled_transaction: created } = await ynabRequest<{ scheduled_transaction: { id: string } }>(token, `${budgetPath()}/scheduled_transactions`, {
     method: "POST",
     body: JSON.stringify({
       scheduled_transaction: {
@@ -167,6 +178,35 @@ export async function createScheduled(token: string, s: NewScheduled): Promise<v
       },
     }),
   });
+  const settings = loadSettings();
+  settings.createdScheduleIds = [...new Set([...settings.createdScheduleIds, created.id])];
+  saveSettings(settings);
+  return created.id;
+}
+
+/** Inbox Undo: deletes a schedule in YNAB, only if this app created it. Called only from the user's click. */
+export async function deleteCreatedScheduled(token: string, id: string): Promise<void> {
+  if (!loadSettings().createdScheduleIds.includes(id)) {
+    throw new Error("Only a schedule that this app created can be deleted.");
+  }
+  await ynabRequest(token, `${budgetPath()}/scheduled_transactions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const settings = loadSettings();
+  settings.createdScheduleIds = settings.createdScheduleIds.filter((x) => x !== id);
+  saveSettings(settings);
+}
+
+export function restoreAnomaly(id: string): Settings {
+  const settings = loadSettings();
+  settings.dismissedAnomalies = settings.dismissedAnomalies.filter((x) => x !== id);
+  saveSettings(settings);
+  return settings;
+}
+
+export function restoreSuggestion(id: string): Settings {
+  const settings = loadSettings();
+  settings.ignoredSuggestions = settings.ignoredSuggestions.filter((x) => x !== id);
+  saveSettings(settings);
+  return settings;
 }
 
 export function dismissAnomaly(id: string): Settings {

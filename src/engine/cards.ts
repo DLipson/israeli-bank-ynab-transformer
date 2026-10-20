@@ -4,7 +4,8 @@
  */
 import { readMemoFields, type YnabTransaction } from "../ynab/categorize.js";
 import { parseChargeDate } from "./charge-date.js";
-import { installmentPlans, type Snapshot } from "./safe-spending.js";
+import { formatShekels, installmentPlans, type Snapshot } from "./safe-spending.js";
+import { isMeaningful, type CategoryComparison } from "./category-comparisons.js";
 import type { TxRef } from "./spent-vs-income.js";
 
 export interface CardGroup {
@@ -131,4 +132,29 @@ export function cardGroups(snapshot: Snapshot): CardGroup[] {
       futureByMonth: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)),
     };
   });
+}
+
+export interface WatchItem {
+  kind: "card-low" | "card-over" | "essential-over-pace";
+  label: string;
+  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string };
+}
+
+/** "Things to watch": true now, no memory. Spending above income is not here: the bar shows it. */
+export function watchItems(groups: CardGroup[], comparisons: CategoryComparison[]): WatchItem[] {
+  const cards = groups.flatMap((g): WatchItem[] =>
+    g.state === "over"
+      ? [{ kind: "card-over", label: `${g.name}: ${formatShekels(-g.headroom!)} over the limit`, target: { tab: "cards", group: g.name } }]
+      : g.state === "low"
+        ? [{ kind: "card-low", label: `${g.name}: only ${formatShekels(g.headroom!)} left`, target: { tab: "cards", group: g.name } }]
+        : []
+  );
+  const essentials = comparisons
+    .filter((c) => c.type === "essential" && isMeaningful(c))
+    .map((c): WatchItem => ({
+      kind: "essential-over-pace",
+      label: `${c.name}: ${formatShekels(c.difference)} over the normal by this day`,
+      target: { tab: "home", categoryId: c.categoryId },
+    }));
+  return [...cards, ...essentials];
 }

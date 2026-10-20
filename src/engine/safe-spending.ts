@@ -91,6 +91,8 @@ export interface Settings {
   baselineMonths: number;
   /** Anomaly findings the user dismissed, by id. */
   dismissedAnomalies: string[];
+  /** Schedules this app created in YNAB; Inbox Undo may delete only these. */
+  createdScheduleIds: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoredSuggestions: [],
   baselineMonths: 6,
   dismissedAnomalies: [],
+  createdScheduleIds: [],
 };
 
 /** Convert a saved inclusive end day to the following payday; month-end and day 31 become month-start. */
