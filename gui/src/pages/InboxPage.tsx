@@ -236,6 +236,14 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
             {card.buttons[1]}
           </Button>
         </div>
+        {card.buttons[1] !== "Skip" && (
+          <div className="mt-2 text-right">
+            {/* Skip saves nothing: the item comes back the next time the Inbox opens. */}
+            <button type="button" className="text-[13px] text-muted-foreground hover:underline disabled:opacity-50" disabled={busy} onClick={() => void run(`Skip · ${card.payee}`, async () => {})}>
+              Skip for now
+            </button>
+          </div>
+        )}
         {choosing && categorize && (
           <div className="mt-3">
             <CategoryPicker categories={categorize.categories} disabled={busy} onPick={(c) => void accept(c)} />

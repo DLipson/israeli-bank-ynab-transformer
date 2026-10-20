@@ -1,6 +1,6 @@
 # Handoff — financial-intelligence
 
-Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesign Phases 0–13 complete).
+Living snapshot, updated after every phase. Last update: 2026-10-21 (Home redesign Phases 0–13 plus the scrape-steps/income-marks and Refresh-from-YNAB follow-ups complete).
 
 ## Active task: Home redesign
 
@@ -27,6 +27,8 @@ Living snapshot, updated after every phase. Last update: 2026-10-20 (Home redesi
 - [x] 11 — Settings and links (quick reload after a settings change).
 - [x] 12 — Monthly report (old reports readable; Windows task unchanged).
 - [x] 13 — Treat as refund (YNAB write faked in the browser; not tested live).
+- [x] Follow-up — Real scrape steps in event order + income marks (`settings.incomeMarks`, `GET /inflows`, `POST /income-marks`; Treat as refund also for Ready to Assign entries).
+- [x] Follow-up — Refresh from YNAB button; card payments left out of the income list.
 
 ### User decisions that override stale plan text
 
