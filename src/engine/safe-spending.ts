@@ -30,6 +30,8 @@ export interface MonthCategory {
   category_group_name: string;
   balance: number;
   budgeted: number;
+  /** Spending this month is negative, as in YNAB. */
+  activity?: number;
   hidden: boolean;
   deleted: boolean;
 }

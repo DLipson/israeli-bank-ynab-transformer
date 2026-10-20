@@ -539,7 +539,8 @@ export async function deleteCreatedScheduled(id: string): Promise<void> {
 
 // --- Reports ---
 
-export type ReportType = "weekly" | "month-start" | "month-end";
+/** "monthly" is made now; the others are older saved reports, still readable. */
+export type ReportType = "monthly" | "weekly" | "month-start" | "month-end";
 
 export interface Report {
   type: ReportType;
@@ -554,6 +555,7 @@ export interface Report {
     note?: string;
     explanation?: string;
     details?: Array<{ label: string; value: string; tone?: "good" | "bad" | "warn" | "muted" }>;
+    chart?: Array<{ month: string; income: number; spent: number }>;
   }>;
 }
 

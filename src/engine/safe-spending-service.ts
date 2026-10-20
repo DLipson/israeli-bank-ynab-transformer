@@ -105,7 +105,6 @@ export async function getSpending(token: string, today = new Date().toISOString(
     essentialCategoryIds: settings.essentialCategoryIds,
     scheduled,
   });
-  const previous = pastMonths(today, 1)[0];
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 31 * 86400000).toISOString().slice(0, 10);
 
   const monthlyFlow = monthlyFlowFor(transactions, items, month.categories, today, month.activity ?? null);
@@ -133,19 +132,17 @@ export async function getSpending(token: string, today = new Date().toISOString(
     baseline: spendBaseline,
     anomalies: detectAnomalies(transactions, spendBaseline.categories, spendBaseline.asOf, settings.dismissedAnomalies),
     upcoming: scheduledOutflows(scheduled, today, new Date(Date.parse(`${today}T00:00:00Z`) + 62 * 86400000).toISOString().slice(0, 10)),
-    previousMonth: {
-      month: previous,
-      spent: items.filter((i) => i.date.startsWith(previous)).reduce((sum, i) => sum + i.amount, 0),
-      normal: spendBaseline.total.normalMonth,
+    /** Income counted and spending in a full month (yyyy-mm), by the Home rules, for the monthly report. */
+    monthFlow: (m: string) => {
+      const [y, mo] = m.split("-").map(Number);
+      const lastDay = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
+      const flow = monthlyFlowFor(transactions, items, month.categories, lastDay);
+      return { month: m, income: flow.income, spent: flow.expenses };
     },
-    /** Spent in a month (yyyy-mm) from the same spending list as the baseline, for reports. */
-    monthTotals: (month: string) => {
-      const inMonth = items.filter((i) => i.date.startsWith(month));
-      return {
-        spent: inMonth.reduce((sum, i) => sum + i.amount, 0),
-        normal: spendBaseline.total.normalMonth,
-        uncategorized: inMonth.filter((i) => i.categoryId === "Uncategorized").reduce((sum, i) => sum + i.amount, 0),
-      };
+    /** Spending in a month in the categories that are fixed today. */
+    fixedSpent: (m: string) => {
+      const fixed = new Set(comparisons.filter((c) => c.type === "fixed").map((c) => c.categoryId));
+      return items.filter((i) => i.date.startsWith(m) && fixed.has(i.categoryId)).reduce((sum, i) => sum + i.amount, 0);
     },
     uncategorizedCount: transactions.filter(
       (t) => !t.deleted && t.date >= since && !t.transfer_account_id && !t.subtransactions?.length && isUncategorized(t)

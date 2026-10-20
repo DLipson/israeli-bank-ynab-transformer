@@ -8,7 +8,8 @@ import { HomePage } from "@/pages/HomePage";
 import { InboxPage } from "@/pages/InboxPage";
 import { CardsPage } from "@/pages/CardsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
-import { ReportsPanel, SpendingProvider } from "@/pages/SpendingPage";
+import { SpendingProvider } from "@/pages/SpendingPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
 import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
@@ -85,7 +86,7 @@ function Shell() {
         </TabsContent>
 
         <TabsContent value="reports">
-          <ReportsPanel />
+          <ReportsPage />
         </TabsContent>
       </Tabs>
     </div>
