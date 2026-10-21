@@ -22,7 +22,7 @@ import {
 import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
 import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
 import type { ReportType } from "../../engine/reports.js";
-import { getReconcile } from "../../engine/reconcile-service.js";
+import { deleteImported, getReconcile, importMissing } from "../../engine/reconcile-service.js";
 
 const router = Router();
 
@@ -251,6 +251,25 @@ router.post(
     const { id } = req.body as { id?: unknown };
     if (typeof id !== "string" || !id) throw new Error("id is required.");
     return dismissAnomaly(id);
+  })
+);
+
+/** YNAB write: imports one bank row that YNAB does not have. Only from the user's Import click. */
+router.post(
+  "/missing/:id/import",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { transactionId: await importMissing(getYnabToken(), String(req.params.id), loadSettings().dismissedAnomalies) };
+  })
+);
+
+/** YNAB write: Undo of Import. Deletes only a transaction this server imported. */
+router.delete(
+  "/missing/imported/:transactionId",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    await deleteImported(getYnabToken(), String(req.params.transactionId));
+    return { ok: true };
   })
 );
 

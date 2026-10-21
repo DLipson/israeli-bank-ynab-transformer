@@ -5,7 +5,7 @@
  * Only dates inside the scraped window count, minus the tolerance at the edges, so a row just
  * outside the window does not show as missing. Read-only. Amounts are signed milliunits.
  */
-import type { YnabTransaction } from "../ynab/categorize.js";
+import { readMemoFields, type YnabTransaction } from "../ynab/categorize.js";
 import type { YnabRow } from "../transformer.js";
 import { getRowSource } from "../ynab/import-service.js";
 
@@ -22,6 +22,8 @@ export interface BankRow {
   date: string;
   amount: number;
   payee: string;
+  /** The scraped row as the importer sends it, so a missing row can be imported. */
+  row: YnabRow;
 }
 
 export interface AccountReconcile {
@@ -62,7 +64,7 @@ const gap = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 
 
 function toBankRow(row: YnabRow): BankRow {
   const amount = Math.round(((parseFloat(row.inflow) || 0) - (parseFloat(row.outflow) || 0)) * 1000);
-  return { date: row.date, amount, payee: row.payee };
+  return { date: row.date, amount, payee: row.payee, row };
 }
 
 /**
@@ -106,7 +108,7 @@ const isMirror = (t: YnabTransaction) => !!t.transfer_account_id && !t.import_id
 const sum = (amounts: number[]) => amounts.reduce((s, a) => s + a, 0);
 
 export function balanceSinceReconcile(
-  bank: { from: string; to: string; rows: BankRow[] },
+  bank: { from: string; to: string; rows: Pick<BankRow, "date" | "amount">[] },
   inAccount: YnabTransaction[]
 ): BalanceCheck {
   const reconciled = inAccount.filter((t) => t.cleared === "reconciled");
@@ -178,4 +180,50 @@ export function reconcile(
     results.push({ source, accountId, accountName, from, to, matched, missingInYnab, missingInBank, balance });
   }
   return results;
+}
+
+/** One reconcile difference, as an Inbox card. */
+export interface MissingItem {
+  /** Stable id, used to ignore it. */
+  id: string;
+  side: "not-in-ynab" | "not-in-bank";
+  accountName: string;
+  date: string;
+  /** Signed milliunits. */
+  amount: number;
+  payee: string;
+}
+
+const RECONCILE_PAYEE = "Reconciliation Balance Adjustment";
+
+/**
+ * Reconcile differences worth a card. Left out: ₪0 rows (Starting Balance), YNAB reconcile
+ * adjustments, and a bank row for a full purchase that YNAB already has as credit-deal
+ * installments (the bank first showed the full amount, then split it; importing it counts it twice).
+ */
+export function missingItems(results: AccountReconcile[], ynab: YnabTransaction[], ignored: string[] = []): MissingItem[] {
+  const hidden = new Set(ignored);
+  const items: MissingItem[] = [];
+  for (const a of results) {
+    const dealTotals = new Set(
+      ynab
+        .filter((t) => !t.deleted && t.account_id === a.accountId)
+        .map((t) => readMemoFields(t.memo))
+        .filter((m) => typeof m?.installment === "string" && m.originalAmount)
+        .map((m) => Math.round(Math.abs(Number(m!.originalAmount)) * 1000))
+    );
+    const seen = new Map<string, number>();
+    for (const b of a.missingInYnab) {
+      const key = `${a.source}:${b.date}:${b.amount}`;
+      const n = (seen.get(key) ?? 0) + 1;
+      seen.set(key, n);
+      if (b.amount === 0 || dealTotals.has(Math.abs(b.amount))) continue;
+      items.push({ id: `missing-ynab:${key}:${n}`, side: "not-in-ynab", accountName: a.accountName, date: b.date, amount: b.amount, payee: b.payee });
+    }
+    for (const t of a.missingInBank) {
+      if (t.amount === 0 || t.payee_name === RECONCILE_PAYEE) continue;
+      items.push({ id: `missing-bank:${t.id}`, side: "not-in-bank", accountName: a.accountName, date: t.date, amount: t.amount, payee: t.payee_name ?? "" });
+    }
+  }
+  return items.filter((i) => !hidden.has(i.id)).sort((x, y) => y.date.localeCompare(x.date));
 }

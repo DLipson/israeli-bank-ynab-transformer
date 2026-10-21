@@ -6,7 +6,9 @@ import {
   createScheduled,
   deleteCreatedScheduled,
   checkAnomaly,
+  deleteImported,
   dismissAnomaly,
+  importMissing,
   getCategorizeList,
   getLlmSuggestions,
   ignoreScheduleSuggestion,
@@ -19,7 +21,7 @@ import {
 import { CategoryPicker } from "@/pages/CategorizePage";
 import { SpendingLoading } from "@/pages/SpendingPage";
 import { ANOMALY_LABEL, buildQueue, type InboxItem } from "@/lib/inbox";
-import { shekels, useSpending } from "@/lib/spending";
+import { formatDate, shekels, useSpending } from "@/lib/spending";
 
 /** One decision, kept in this page's memory so Undo can reverse it. */
 interface Done {
@@ -27,7 +29,7 @@ interface Done {
   undo: () => Promise<void>;
 }
 
-const KIND_NAME = { unusual: "Unusual", categorize: "Categorize", schedule: "Schedule" } as const;
+const KIND_NAME = { unusual: "Unusual", missing: "Reconcile", categorize: "Categorize", schedule: "Schedule" } as const;
 
 function ordinal(day: number): string {
   const tens = day % 100;
@@ -47,6 +49,17 @@ function describe(q: InboxItem): Card {
   if (q.kind === "unusual") {
     const a = q.anomaly;
     return { title: ANOMALY_LABEL[a.kind], payee: a.title.replace(/^[^:]+: /, ""), amount: a.amount, detail: a.detail, buttons: ["Looks right", "Check it"] };
+  }
+  if (q.kind === "missing") {
+    const m = q.missing;
+    const ynab = m.side === "not-in-ynab";
+    return {
+      title: ynab ? "In the bank, not in YNAB" : "In YNAB, not in the bank",
+      payee: m.payee || "(no payee)",
+      amount: m.amount,
+      detail: `${formatDate(m.date)} · ${m.accountName}. ${ynab ? "The bank reported it; YNAB does not have it." : "YNAB has it; the saved scrapes do not."}`,
+      buttons: ynab ? ["Import", "Ignore"] : ["Ignore", "Skip"],
+    };
   }
   if (q.kind === "categorize") {
     const i = q.item;
@@ -105,7 +118,7 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
   }, []);
 
   // The queue is built once, when both lists are here; later reloads do not move items under the user.
-  if (!queue && data && categorize) setQueue(buildQueue(data.anomalies, categorize.items, data.suggestions));
+  if (!queue && data && categorize) setQueue(buildQueue(data.anomalies, data.missing, categorize.items, data.suggestions));
 
   const left = queue ? queue.length - done.length : null;
   useEffect(() => {
@@ -179,8 +192,22 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
       return () => acceptCategory(q.id, null);
     });
 
+  // Ignore: saved with the dismissed anomalies, so the row does not come back.
+  const ignore = () =>
+    void run(`Ignore · ${card.payee}`, async () => {
+      await dismissAnomaly(q.id);
+      return () => restoreAnomaly(q.id);
+    });
+
   const first = () => {
-    if (q.kind === "unusual") {
+    if (q.kind === "missing") {
+      if (q.missing.side === "not-in-bank") ignore();
+      else
+        void run(name, async () => {
+          const transactionId = await importMissing(q.id);
+          return () => deleteImported(transactionId);
+        });
+    } else if (q.kind === "unusual") {
       void run(name, async () => {
         await dismissAnomaly(q.id);
         return () => restoreAnomaly(q.id);
@@ -199,7 +226,8 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
   };
 
   const second = () => {
-    if (q.kind === "categorize" && q.item.suggestions.length) setChoosing(true);
+    if (q.kind === "missing" && q.missing.side === "not-in-ynab") ignore();
+    else if (q.kind === "categorize" && q.item.suggestions.length) setChoosing(true);
     else if (q.kind === "schedule") {
       void run(`${card.buttons[1]} · ${card.payee}`, async () => {
         await ignoreScheduleSuggestion(q.id);

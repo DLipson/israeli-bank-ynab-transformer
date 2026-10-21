@@ -28,6 +28,8 @@ import { applyIncomeMarks, spentVsIncomeFor, withRefundLinks, type IncomeMark } 
 import { categoryComparisons, whatPushedOver } from "./category-comparisons.js";
 import { cardGroups, watchItems } from "./cards.js";
 import { detectAnomalies } from "./anomalies.js";
+import { missingItems } from "./reconcile.js";
+import { reconcileAgainst } from "./reconcile-service.js";
 import { isUncategorized, type YnabTransaction } from "../ynab/categorize.js";
 import { setCategory } from "../ynab/categorize-service.js";
 
@@ -137,6 +139,8 @@ export async function getSpending(token: string, today = new Date().toISOString(
     baseline: spendBaseline,
     // Items on the To check list leave the Inbox; they show in Things to watch.
     anomalies: detectAnomalies(transactions, spendBaseline.categories, spendBaseline.asOf, [...settings.dismissedAnomalies, ...settings.toCheck.map((c) => c.id)]),
+    // Reconcile differences for the Inbox; "Ignore" saves the id with the dismissed anomalies.
+    missing: missingItems(reconcileAgainst(transactions), transactions, settings.dismissedAnomalies),
     upcoming: scheduledOutflows(scheduled, today, new Date(Date.parse(`${today}T00:00:00Z`) + 62 * 86400000).toISOString().slice(0, 10)),
     /** Income counted and spending in a full month (yyyy-mm), by the Home rules, for the monthly report. */
     monthFlow: (m: string) => {

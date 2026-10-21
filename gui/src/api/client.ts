@@ -431,6 +431,27 @@ export interface Pace {
   status: "under" | "on" | "over" | "fixed-paid" | "fixed-due";
 }
 
+/** A reconcile difference: a bank row YNAB does not have, or a YNAB transaction the scrapes do not have. */
+export interface MissingItem {
+  id: string;
+  side: "not-in-ynab" | "not-in-bank";
+  accountName: string;
+  date: string;
+  /** Signed milliunits. */
+  amount: number;
+  payee: string;
+}
+
+/** YNAB write: imports one missing bank row. Only from the user's Import click. Returns the new transaction id. */
+export async function importMissing(id: string): Promise<string> {
+  return (await request<{ transactionId: string }>(`/spending/missing/${encodeURIComponent(id)}/import`, { method: "POST" })).transactionId;
+}
+
+/** YNAB write: Undo of Import. Deletes the transaction that Import added. */
+export async function deleteImported(transactionId: string): Promise<void> {
+  await request(`/spending/missing/imported/${encodeURIComponent(transactionId)}`, { method: "DELETE" });
+}
+
 export interface Anomaly {
   id: string;
   kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase" | "installment-twice" | "full-and-installments";
@@ -501,6 +522,7 @@ export interface SpendingData {
   baseline: Baseline;
   uncategorizedCount: number;
   anomalies: Anomaly[];
+  missing: MissingItem[];
   accounts: Array<{ id: string; name: string; type: string; balance: number }>;
   categories: CategoryOption[];
 }

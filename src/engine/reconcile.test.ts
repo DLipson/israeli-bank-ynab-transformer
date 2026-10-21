@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { YnabTransaction } from "../ynab/categorize.js";
-import { balanceSinceReconcile, reconcile, type ScrapeRun } from "./reconcile.js";
+import { balanceSinceReconcile, missingItems, reconcile, type ScrapeRun } from "./reconcile.js";
 
 const SRC = "Max - 1234";
 const row = (date: string, outflow: string, payee = "Shop") => ({
@@ -56,6 +56,23 @@ describe("reconcile", () => {
     expect(r.missingInYnab).toEqual([]);
     expect(r.missingInBank).toEqual([]);
     expect(reconcile(runs, ynab, {})).toEqual([]);
+  });
+});
+
+describe("missingItems", () => {
+  it("makes cards for both sides, without ₪0 rows, reconcile adjustments, or a full charge YNAB has as a credit deal", () => {
+    const runs = [run("2026-10-30T10:00:00Z", 29, [row("2026-10-13", "30.00", "Suite"), row("2026-10-12", "1436.10", "City")])];
+    const deal = txn("2026-10-14", 294.62, { payee_name: "City", memo: JSON.stringify({ installment: "1/5", originalAmount: -1436.1 }) });
+    const extra = txn("2026-10-20", 99);
+    const ynab = [deal, extra, txn("2026-10-14", 0, { payee_name: "Starting Balance" }), txn("2026-10-16", 22.14, { payee_name: "Reconciliation Balance Adjustment" })];
+    const items = missingItems(reconcile(runs, ynab, { [SRC]: "acc" }), ynab);
+    expect(items.map((i) => [i.side, i.payee, i.amount])).toEqual([
+      ["not-in-bank", "Shop", -99000],
+      ["not-in-bank", "City", -294620],
+      ["not-in-ynab", "Suite", -30000],
+    ]);
+    expect(items[2].id).toBe(`missing-ynab:${SRC}:2026-10-13:-30000:1`);
+    expect(missingItems(reconcile(runs, ynab, { [SRC]: "acc" }), ynab, [`missing-bank:${extra.id}`])).toHaveLength(2);
   });
 });
 
