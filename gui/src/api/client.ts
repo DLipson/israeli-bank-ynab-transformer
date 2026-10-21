@@ -433,7 +433,7 @@ export interface Pace {
 
 export interface Anomaly {
   id: string;
-  kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase";
+  kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase" | "installment-twice" | "full-and-installments";
   date: string;
   title: string;
   detail: string;

@@ -3,10 +3,17 @@
  * what was found and why; the user can dismiss it. Amounts are positive milliunits.
  * Spec: docs/financial-intelligence-notes.md, "Anomaly detectors".
  */
-import { identityKey, parseBankText, readMemo, type YnabTransaction } from "../ynab/categorize.js";
+import { identityKey, parseBankText, readMemo, readMemoFields, type YnabTransaction } from "../ynab/categorize.js";
 import type { Pace } from "./baseline.js";
 
-export type AnomalyKind = "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase";
+export type AnomalyKind =
+  | "unusual-charge"
+  | "new-payee"
+  | "duplicate"
+  | "category-spike"
+  | "price-increase"
+  | "installment-twice"
+  | "full-and-installments";
 
 export interface Anomaly {
   /** Stable id, used to dismiss it. */
@@ -155,6 +162,8 @@ export function detectAnomalies(
   const reportedIds = new Set(found.flatMap((a) => a.transactionIds));
   found.push(...priceIncreases(history, since, asOf).filter((p) => !reportedIds.has(p.transactionIds[0])));
 
+  found.push(...importedTwice(transactions, since, asOf));
+
   // Category spike: already well over a whole normal month.
   const month = asOf.slice(0, 7);
   for (const c of categories) {
@@ -174,6 +183,70 @@ export function detectAnomalies(
 
   const hidden = new Set(dismissed);
   return found.filter((a) => !hidden.has(a.id)).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * The same charge in YNAB twice, from the importer:
+ * - one installment payment imported again after the bank changed its charge date (new date, new import_id);
+ * - a full purchase imported, then its installments when the bank made it a credit deal (קרדיט).
+ * Reported when the newest of the copies is recent.
+ */
+function importedTwice(transactions: YnabTransaction[], since: string, asOf: string): Anomaly[] {
+  const found: Anomaly[] = [];
+  const payments = new Map<string, YnabTransaction[]>();
+  const plans = new Map<string, { original: number; newest: YnabTransaction }>();
+  for (const t of transactions) {
+    if (t.deleted || t.amount >= 0 || t.transfer_account_id || t.date > asOf) continue;
+    const memo = readMemoFields(t.memo);
+    if (typeof memo?.installment !== "string") continue;
+    const original = Math.round(Math.abs(Number(memo.originalAmount) || 0) * K);
+    const plan = `${t.account_id}|${t.payee_name}|${original}`;
+    const key = `${plan}|${memo.installment}`;
+    payments.set(key, [...(payments.get(key) ?? []), t]);
+    const known = plans.get(plan);
+    if (original && (!known || t.date > known.newest.date)) plans.set(plan, { original, newest: t });
+  }
+
+  for (const copies of payments.values()) {
+    if (copies.length < 2) continue;
+    copies.sort((a, b) => a.date.localeCompare(b.date));
+    const newest = copies.at(-1)!;
+    if (newest.date < since) continue;
+    const installment = readMemoFields(newest.memo)!.installment as string;
+    found.push({
+      id: `installment-twice:${copies.map((c) => c.id).sort().join(":")}`,
+      kind: "installment-twice",
+      date: newest.date,
+      title: `Installment imported twice: ${payeeName(newest)}`,
+      detail: `Payment ${installment.replace("/", " of ")} (${shekels(-newest.amount)}) is on ${newest.account_name} ${copies.length} times (${copies.map((c) => c.date).join(", ")}). The bank charges it once.`,
+      amount: -newest.amount * (copies.length - 1),
+      transactionIds: copies.map((c) => c.id),
+    });
+  }
+
+  for (const { original, newest } of plans.values()) {
+    if (newest.date < since) continue;
+    const full = transactions.find(
+      (t) =>
+        !t.deleted &&
+        !t.transfer_account_id &&
+        t.account_id === newest.account_id &&
+        t.payee_name === newest.payee_name &&
+        t.amount === -original &&
+        typeof readMemoFields(t.memo)?.installment !== "string"
+    );
+    if (!full) continue;
+    found.push({
+      id: `full-and-installments:${full.id}`,
+      kind: "full-and-installments",
+      date: newest.date,
+      title: `Full charge and installments: ${payeeName(full)}`,
+      detail: `${shekels(original)} on ${full.date} is in YNAB as one charge, and also as installments of ${shekels(-newest.amount)}. The bank charges only the installments.`,
+      amount: original,
+      transactionIds: [full.id, newest.id],
+    });
+  }
+  return found;
 }
 
 /**

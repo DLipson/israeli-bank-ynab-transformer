@@ -21,4 +21,6 @@ export const ANOMALY_LABEL: Record<Anomaly["kind"], string> = {
   duplicate: "Possible duplicate",
   "category-spike": "Category over normal",
   "price-increase": "Price went up",
+  "installment-twice": "Installment imported twice",
+  "full-and-installments": "Full charge and installments",
 };

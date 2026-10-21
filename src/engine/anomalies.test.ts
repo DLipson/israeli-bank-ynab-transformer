@@ -114,6 +114,29 @@ describe("detectAnomalies", () => {
     expect(found.map((a) => a.title)).toEqual(["Clothing is over a whole normal month"]);
   });
 
+  it("flags one installment payment imported twice after the bank changed its charge date", () => {
+    const memo = (chargeDate: string) => JSON.stringify({ installment: "6/11", originalAmount: -1558, chargeDate });
+    const found = detectAnomalies(
+      [txn("2026-10-03", 141.63, { payee_name: "Insurance", memo: memo("2026-11-02") }), txn("2026-10-11", 141.63, { payee_name: "Insurance", memo: memo("2026-11-10") })],
+      [],
+      AS_OF
+    );
+    expect(found).toEqual([
+      expect.objectContaining({
+        kind: "installment-twice",
+        detail: "Payment 6 of 11 (₪142) is on Card 2 times (2026-10-03, 2026-10-11). The bank charges it once.",
+      }),
+    ]);
+  });
+
+  it("flags a full purchase that is also in YNAB as credit-deal installments", () => {
+    const full = txn("2026-08-12", 1436.1, { payee_name: "City" });
+    const payment = txn("2026-10-03", 294.62, { payee_name: "City", memo: JSON.stringify({ installment: "1/5", originalAmount: -1436.1 }) });
+    const found = detectAnomalies([full, payment], [], AS_OF);
+    expect(found).toEqual([expect.objectContaining({ kind: "full-and-installments", id: `full-and-installments:${full.id}`, transactionIds: [full.id, payment.id] })]);
+    expect(detectAnomalies([payment], [], AS_OF)).toEqual([]);
+  });
+
   it("leaves out dismissed findings and transactions older than 30 days", () => {
     const old = txn("2026-08-01", 900, { payee_name: "Old new shop" });
     const fresh = txn("2026-10-01", 900, { payee_name: "Fresh new shop" });
