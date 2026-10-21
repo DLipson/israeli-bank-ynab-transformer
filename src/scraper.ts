@@ -16,16 +16,18 @@ const TIMEOUT_RETRY_DELAY_MS = 3000;
 /**
  * Scrape a single account. For banks with a trace (Leumi), the scraper's step-by-step debug lines
  * are saved to a trace file (see scraper-trace.ts).
+ * `signal`: Cancel closes the scraper's browser at once (library `terminate`).
  */
 export async function scrapeAccount(
   account: AccountConfig,
   startDate: Date,
   showBrowser: boolean,
-  onProgress?: (message: string, accountName?: string) => void
+  onProgress?: (message: string, accountName?: string) => void,
+  signal?: AbortSignal
 ): Promise<ScrapeResult> {
   const stopTrace = startScraperTrace(account.companyId);
   try {
-    return await scrapeAccountWithRetry(account, startDate, showBrowser, onProgress);
+    return await scrapeAccountWithRetry(account, startDate, showBrowser, onProgress, signal);
   } finally {
     stopTrace();
   }
@@ -35,7 +37,8 @@ async function scrapeAccountWithRetry(
   account: AccountConfig,
   startDate: Date,
   showBrowser: boolean,
-  onProgress?: (message: string, accountName?: string) => void
+  onProgress?: (message: string, accountName?: string) => void,
+  signal?: AbortSignal
 ): Promise<ScrapeResult> {
   onProgress?.(`\nScraping ${account.name}...`, account.name);
 
@@ -47,20 +50,40 @@ async function scrapeAccountWithRetry(
     verbose: false,
   };
 
+  const canceled = (): ScrapeResult => {
+    onProgress?.("  Canceled.", account.name);
+    return { accountName: account.name, success: false, transactions: [], error: "Canceled" };
+  };
+
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const scraper = createScraper(options);
+      // Not every scraper has `terminate` (only browser scrapers do).
+      const stop = () => void (scraper as { terminate?: (success: boolean) => Promise<void> }).terminate?.(false).catch(() => {});
 
       scraper.onProgress((companyId, payload) => {
         onProgress?.(`  [${account.name}] ${payload.type}`, account.name);
+        // The browser may start after the abort, so close it on each progress event.
+        if (signal?.aborted) stop();
       });
 
+      if (signal?.aborted) return canceled();
+
       const credentials = account.credentials as Parameters<typeof scraper.scrape>[0];
-      const result = await scraper.scrape(credentials);
+      signal?.addEventListener("abort", stop, { once: true });
+      let result: Awaited<ReturnType<typeof scraper.scrape>>;
+      try {
+        result = await scraper.scrape(credentials);
+      } finally {
+        signal?.removeEventListener("abort", stop);
+      }
+
+      if (signal?.aborted) return canceled();
 
       if (!result.success) {
         if (attempt === 1 && (result.errorType === TIMEOUT_ERROR_TYPE || isTransientMessage(result.errorMessage))) {
           await waitBeforeRetry(account.name, onProgress);
+          if (signal?.aborted) return canceled();
           continue;
         }
 
@@ -96,9 +119,11 @@ async function scrapeAccountWithRetry(
         transactions,
       };
     } catch (error) {
+      if (signal?.aborted) return canceled();
       const message = error instanceof Error ? error.message : String(error);
       if (isTransientMessage(message) && attempt === 1) {
         await waitBeforeRetry(account.name, onProgress);
+        if (signal?.aborted) return canceled();
         continue;
       }
 
@@ -174,7 +199,7 @@ export async function scrapeAllAccounts(
     if (!next) return;
 
     try {
-      const result = await scrapeFn(next.account, startDate, showBrowser, onProgress);
+      const result = await scrapeFn(next.account, startDate, showBrowser, onProgress, abortSignal);
       resultsByIndex[next.index] = result;
     } finally {
       if (queue.length > 0 && !abortSignal?.aborted) {

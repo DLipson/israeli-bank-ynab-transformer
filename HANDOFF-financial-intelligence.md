@@ -31,6 +31,7 @@ Living snapshot, updated after every phase. Last update: 2026-10-21 (Home redesi
 - [x] Follow-up — Refresh from YNAB button; card payments left out of the income list.
 - [x] Follow-up — Fewer YNAB reads (429s): tabs stay mounted, 60 s shared reads, "YNAB HH:MM" header line.
 - [x] Follow-up — Whole-app speed pass: every YNAB GET shared 60 s in `ynabRequest`; 2-month snapshot only on first read and Refresh; memo, installment-plan, run-file and id-map caches; Credential Manager read once per server start (restart the server after changing a credential outside the app); unused `/api/spending` fields removed. `getSpending` ~920 ms → ~210 ms on the same machine.
+- [x] Follow-up — Scrape Cancel closes the running scraper browser (library `terminate(false)`; account result "Canceled"; no retry). Unit-tested with a fake scraper; not tried on a real bank scrape.
 
 ### User decisions that override stale plan text
 
