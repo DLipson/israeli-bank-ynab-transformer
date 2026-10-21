@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getHistoryDir } from "./env.js";
 
@@ -51,7 +51,10 @@ export function pruneRuns(now: number = Date.now()): void {
   const cutoff = now - RETENTION_DAYS * MS_PER_DAY;
   for (const file of readdirSync(dir)) {
     const id = file.replace(/\.json$/, "");
-    if (RUN_ID_PATTERN.test(id) && Number(id) < cutoff) unlinkSync(join(dir, file));
+    if (RUN_ID_PATTERN.test(id) && Number(id) < cutoff) {
+      unlinkSync(join(dir, file));
+      parsedRuns.delete(join(dir, file));
+    }
   }
 }
 
@@ -74,6 +77,25 @@ export function getRun(id: string): RunRecord | null {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as RunRecord) : null;
 }
 
+const parsedRuns = new Map<string, { mtimeMs: number; size: number; record: RunRecord }>();
+
+/** Read-only: callers must not change the record. Parsed once; parsed again only when the file changes. */
+export function readRunCached(id: string): RunRecord | null {
+  const path = runPath(id);
+  let stat;
+  try {
+    stat = statSync(path);
+  } catch {
+    parsedRuns.delete(path);
+    return null;
+  }
+  const hit = parsedRuns.get(path);
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.record;
+  const record = JSON.parse(readFileSync(path, "utf-8")) as RunRecord;
+  parsedRuns.set(path, { mtimeMs: stat.mtimeMs, size: stat.size, record });
+  return record;
+}
+
 export function updateRun(id: string, update: (record: RunRecord) => void): void {
   const record = getRun(id);
   if (!record) return;
@@ -81,7 +103,7 @@ export function updateRun(id: string, update: (record: RunRecord) => void): void
   writeRun(record);
 }
 
-/** Newest first. ponytail: parses every file; fine for 90 days of runs, add an index file if this gets slow. */
+/** Newest first. ponytail: files are parsed once and reused until they change. */
 export function listRuns(): RunSummary[] {
   const dir = getHistoryDir();
   if (!existsSync(dir)) return [];
@@ -90,7 +112,7 @@ export function listRuns(): RunSummary[] {
     .filter((id) => RUN_ID_PATTERN.test(id))
     .sort((a, b) => Number(b) - Number(a))
     .map((id) => {
-      const { payload, ...rest } = getRun(id)!;
+      const { payload, ...rest } = readRunCached(id)!;
       return {
         ...rest,
         rowCount: payload.rows.length,

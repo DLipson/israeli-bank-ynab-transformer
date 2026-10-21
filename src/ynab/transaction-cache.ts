@@ -6,13 +6,17 @@ import type { YnabTransaction } from "./categorize.js";
 
 /**
  * Local copy of all YNAB transactions for one budget. The first load downloads everything;
- * later loads use deltas and refresh the current and previous month from a full snapshot.
+ * later loads use deltas. The first read after a server start, and Refresh, also replace the
+ * current and previous month from a full snapshot.
  * ponytail: one JSON file per budget; move to SQLite when the core engine needs queries.
  */
 interface CacheFile {
   serverKnowledge: number;
   transactions: YnabTransaction[];
 }
+
+/** Budgets that had a snapshot of the last 2 months since this server started. */
+const snapshotted = new Set<string>();
 
 function cachePath(budgetId: string): string {
   return join(getAppConfigDir(), "ynab-cache", `${budgetId.replace(/[^\w-]/g, "")}.json`);
@@ -46,7 +50,7 @@ export async function getAllTransactions(token: string, budgetId: string, option
   if (!options.fresh && shared && shared.budgetId === budgetId && shared.writes === ynabWrites() && Date.now() - shared.at < SHARE_MS) {
     return shared.read;
   }
-  const entry = { budgetId, at: Date.now(), writes: ynabWrites(), read: readTransactions(token, budgetId) };
+  const entry = { budgetId, at: Date.now(), writes: ynabWrites(), read: readTransactions(token, budgetId, options.fresh) };
   shared = entry;
   entry.read.catch(() => {
     if (shared === entry) shared = null;
@@ -54,19 +58,21 @@ export async function getAllTransactions(token: string, budgetId: string, option
   return entry.read;
 }
 
-async function readTransactions(token: string, budgetId: string): Promise<YnabTransaction[]> {
+async function readTransactions(token: string, budgetId: string, fresh = false): Promise<YnabTransaction[]> {
   const path = cachePath(budgetId);
-  const cache: CacheFile | null = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as CacheFile) : null;
+  const raw = existsSync(path) ? readFileSync(path, "utf-8") : null;
+  const cache: CacheFile | null = raw === null ? null : (JSON.parse(raw) as CacheFile);
 
   // Without since_date YNAB returns only the last year, so the first download asks for everything.
   const query = cache ? `?last_knowledge_of_server=${cache.serverKnowledge}` : "?since_date=2000-01-01";
   const data = await ynabRequest<{ transactions: YnabTransaction[]; server_knowledge: number }>(
     token,
-    `/budgets/${encodeURIComponent(budgetId)}/transactions${query}`
+    `/budgets/${encodeURIComponent(budgetId)}/transactions${query}`,
+    { fresh }
   );
 
   let transactions = mergeDelta(cache?.transactions ?? [], data.transactions);
-  if (cache) {
+  if (cache && (fresh || !snapshotted.has(budgetId))) {
     // shortcut: reconcile current and previous month only; widen if older deletions affect history.
     const date = new Date();
     const refreshFrom = new Date(
@@ -76,18 +82,17 @@ async function readTransactions(token: string, budgetId: string): Promise<YnabTr
       .slice(0, 10);
     const recent = await ynabRequest<{ transactions: YnabTransaction[] }>(
       token,
-      `/budgets/${encodeURIComponent(budgetId)}/transactions?since_date=${refreshFrom}`
+      `/budgets/${encodeURIComponent(budgetId)}/transactions?since_date=${refreshFrom}`,
+      { fresh }
     );
     transactions = replaceSinceDate(transactions, recent.transactions, refreshFrom);
   }
-  if (
-    !cache ||
-    data.transactions.length > 0 ||
-    data.server_knowledge !== cache.serverKnowledge ||
-    JSON.stringify(transactions) !== JSON.stringify(cache.transactions)
-  ) {
+  // A full download already is a snapshot.
+  snapshotted.add(budgetId);
+  const text = JSON.stringify({ serverKnowledge: data.server_knowledge, transactions } satisfies CacheFile);
+  if (text !== raw) {
     mkdirSync(join(getAppConfigDir(), "ynab-cache"), { recursive: true });
-    writeFileSync(path, JSON.stringify({ serverKnowledge: data.server_knowledge, transactions } satisfies CacheFile), "utf-8");
+    writeFileSync(path, text, "utf-8");
   }
   return transactions;
 }

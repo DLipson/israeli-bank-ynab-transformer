@@ -484,31 +484,15 @@ export interface ScheduleSuggestion {
 }
 
 export interface SpendingData {
-  monthlyFlow: {
-    month: string;
-    expenses: number;
-    planActivity: number | null;
-    income: number;
-    incomeThisMonth: number;
-    carriedIncome: number;
-    carryoverFrom: string;
-    carryoverTo: string;
-  };
   today: string;
   /** When the server read these numbers from YNAB. */
   ynabReadAt?: string;
   lastScrapedAt: string | null;
-  periodEnd: string;
   spentVsIncome: SpentVsIncome;
   available: AvailableUntilPayday;
   cards: CardGroup[];
   watch: WatchItem[];
   settings: SpendingSettings;
-  cashflow: LeftToSpend;
-  ynab: LeftToSpend;
-  gap: number;
-  readyToAssign: number;
-  exposure: Array<{ name: string; limit: number | null; used: number; unused: number | null; lines: SpendingLine[] }>;
   obligations: Array<{
     month: string;
     installments: number;
@@ -520,8 +504,6 @@ export interface SpendingData {
     };
   }>;
   suggestions: ScheduleSuggestion[];
-  scheduledCount: number;
-  baseline: Baseline;
   uncategorizedCount: number;
   anomalies: Anomaly[];
   missing: MissingItem[];

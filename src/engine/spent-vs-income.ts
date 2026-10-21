@@ -118,8 +118,12 @@ function currentMonthSpending(
   );
 }
 
+/** Transactions by id, built once for each transactions array (spendingRefs runs once per category). */
+const byIdMemo = new WeakMap<YnabTransaction[], Map<string, YnabTransaction>>();
+
 export function spendingRefs(items: SpendItem[], transactions: YnabTransaction[]): TxRef[] {
-  const byId = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  let byId = byIdMemo.get(transactions);
+  if (!byId) byIdMemo.set(transactions, (byId = new Map(transactions.map((transaction) => [transaction.id, transaction]))));
   const lines = items.flatMap((item) => {
     const transaction = item.transactionId ? byId.get(item.transactionId) : undefined;
     return transaction

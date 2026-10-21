@@ -29,6 +29,8 @@ Living snapshot, updated after every phase. Last update: 2026-10-21 (Home redesi
 - [x] 13 — Treat as refund (YNAB write faked in the browser; not tested live).
 - [x] Follow-up — Real scrape steps in event order + income marks (`settings.incomeMarks`, `GET /inflows`, `POST /income-marks`; Treat as refund also for Ready to Assign entries).
 - [x] Follow-up — Refresh from YNAB button; card payments left out of the income list.
+- [x] Follow-up — Fewer YNAB reads (429s): tabs stay mounted, 60 s shared reads, "YNAB HH:MM" header line.
+- [x] Follow-up — Whole-app speed pass: every YNAB GET shared 60 s in `ynabRequest`; 2-month snapshot only on first read and Refresh; memo, installment-plan, run-file and id-map caches; Credential Manager read once per server start (restart the server after changing a credential outside the app); unused `/api/spending` fields removed. `getSpending` ~920 ms → ~210 ms on the same machine.
 
 ### User decisions that override stale plan text
 

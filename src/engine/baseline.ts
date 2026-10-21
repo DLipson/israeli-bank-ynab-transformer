@@ -136,38 +136,63 @@ export function normalizedName(value: string | null | undefined): string {
 }
 
 export function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
-  const leftName = normalizedName(a);
-  const rightName = normalizedName(b);
+  return similarNormalized(normalizedName(a), normalizedName(b));
+}
+
+/** `similarPayee` for names that `normalizedName` already normalized. */
+function similarNormalized(leftName: string, rightName: string): boolean {
   if (leftName && leftName === rightName) return true;
-  const tokens = (value: string | null | undefined) =>
-    new Set(normalizedName(value).split(/\s+/).filter(Boolean));
-  const left = tokens(a);
-  const right = tokens(b);
+  const tokens = (value: string) => new Set(value.split(/\s+/).filter(Boolean));
+  const left = tokens(leftName);
+  const right = tokens(rightName);
   if (!left.size || !right.size) return false;
   const overlap = [...left].filter((token) => right.has(token)).length;
   return overlap >= 2 && overlap / Math.min(left.size, right.size) >= 0.75;
 }
 
+interface PreparedSchedule {
+  accountId: string;
+  categoryId: string | null | undefined;
+  categoryName: string;
+  payee: string;
+  amount: number;
+  day: number;
+}
+
+/** Active outflow schedules with their names normalized once. */
+function prepareSchedules(schedules: ScheduleLike[]): PreparedSchedule[] {
+  return schedules
+    .filter((s) => !s.deleted && s.amount < 0)
+    .map((s) => ({
+      accountId: s.account_id,
+      categoryId: s.category_id,
+      categoryName: normalizedName(s.category_name),
+      payee: normalizedName(s.payee_name),
+      amount: -s.amount,
+      day: Number(s.date_next.slice(8, 10)),
+    }));
+}
+
 /** Match by payee, or by category when either payee is missing, then check account, amount, and day. */
-function scheduled(item: SpendItem, schedules: ScheduleLike[]): boolean {
+function scheduled(item: SpendItem, schedules: PreparedSchedule[]): boolean {
   const day = Number(item.date.slice(8, 10));
+  const itemPayee = normalizedName(item.payeeName);
+  const itemCategory = normalizedName(item.categoryName);
   return schedules.some((s) => {
-    if (s.deleted || s.amount >= 0 || s.account_id !== item.accountId) return false;
+    if (s.accountId !== item.accountId) return false;
     const sameCategory =
-      (!!s.category_id && s.category_id === item.categoryId) ||
-      (!!normalizedName(s.category_name) && normalizedName(s.category_name) === normalizedName(item.categoryName));
-    const itemPayee = normalizedName(item.payeeName);
-    const scheduledPayee = normalizedName(s.payee_name);
-    const bothHavePayees = Boolean(itemPayee && scheduledPayee);
-    if (!similarPayee(itemPayee, scheduledPayee) && (bothHavePayees || !sameCategory)) return false;
-    const amount = -s.amount;
-    const gap = Math.abs(Number(s.date_next.slice(8, 10)) - day);
-    return Math.abs(item.amount - amount) <= amount * COVER_SHARE && Math.min(gap, 31 - gap) <= COVER_DAYS;
+      (!!s.categoryId && s.categoryId === item.categoryId) || (!!s.categoryName && s.categoryName === itemCategory);
+    const bothHavePayees = Boolean(itemPayee && s.payee);
+    if (!similarNormalized(itemPayee, s.payee) && (bothHavePayees || !sameCategory)) return false;
+    const gap = Math.abs(s.day - day);
+    return Math.abs(item.amount - s.amount) <= s.amount * COVER_SHARE && Math.min(gap, 31 - gap) <= COVER_DAYS;
   });
 }
 
 export function predictItems(items: SpendItem[], schedules: ScheduleLike[]): SpendItem[] {
-  return items.filter((i) => !i.installment && !scheduled(i, schedules));
+  // ponytail: no date bound: a schedule matches by day of month, so every past item can match.
+  const prepared = prepareSchedules(schedules);
+  return items.filter((i) => !i.installment && !scheduled(i, prepared));
 }
 
 /**

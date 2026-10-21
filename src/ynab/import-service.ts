@@ -118,7 +118,27 @@ export function getYnabToken(): string {
 let writes = 0;
 export const ynabWrites = (): number => writes;
 
-export async function ynabRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+const SHARE_MS = 60_000;
+const sharedReads = new Map<string, { at: number; writes: number; read: Promise<unknown> }>();
+
+/**
+ * Sends a YNAB request. A GET of the same path is shared for a minute (and while it runs), until this
+ * server writes to YNAB; `fresh: true` reads again. Other methods are never shared.
+ */
+export function ynabRequest<T>(token: string, path: string, init: RequestInit & { fresh?: boolean } = {}): Promise<T> {
+  const { fresh, ...fetchInit } = init;
+  if (fetchInit.method && fetchInit.method !== "GET") return sendYnabRequest<T>(token, path, fetchInit);
+  const hit = sharedReads.get(path);
+  if (!fresh && hit && hit.writes === writes && Date.now() - hit.at < SHARE_MS) return hit.read as Promise<T>;
+  const entry = { at: Date.now(), writes, read: sendYnabRequest<T>(token, path, fetchInit) };
+  sharedReads.set(path, entry);
+  entry.read.catch(() => {
+    if (sharedReads.get(path) === entry) sharedReads.delete(path);
+  });
+  return entry.read as Promise<T>;
+}
+
+async function sendYnabRequest<T>(token: string, path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${YNAB_API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

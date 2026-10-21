@@ -1,4 +1,4 @@
-import { getRun, listRuns } from "../history.js";
+import { listRuns, readRunCached } from "../history.js";
 import type { YnabRow } from "../transformer.js";
 import type { YnabTransaction } from "../ynab/categorize.js";
 import { buildYnabTransactions, loadYnabImportConfig, ynabRequest } from "../ynab/import-service.js";
@@ -7,7 +7,7 @@ import { missingItems, reconcile, type AccountReconcile, type ScrapeRun } from "
 
 function scrapeRuns(): ScrapeRun[] {
   return listRuns().map((s) => {
-    const run = getRun(s.id)!;
+    const run = readRunCached(s.id)!;
     return { createdAt: run.createdAt, daysBack: run.settings.daysBack, rows: run.payload.rows as YnabRow[] };
   });
 }

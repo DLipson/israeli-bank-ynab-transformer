@@ -450,6 +450,17 @@ function principalAfter(original: number, payment: number, paid: number, total: 
  * treated as ended or no longer imported.
  */
 export function installmentPlans(transactions: YnabTransaction[], today: string): InstallmentPlan[] {
+  const hit = plansMemo.get(transactions);
+  if (hit && hit.today === today) return hit.plans;
+  const plans = computeInstallmentPlans(transactions, today);
+  plansMemo.set(transactions, { today, plans });
+  return plans;
+}
+
+/** Plans for the same array object and day, shared by cards, exposure and obligations. Callers must not change them. */
+const plansMemo = new WeakMap<YnabTransaction[], { today: string; plans: InstallmentPlan[] }>();
+
+function computeInstallmentPlans(transactions: YnabTransaction[], today: string): InstallmentPlan[] {
   const [y, m] = parts(today);
   const [sy, sm] = addMonths(y, m, -2);
   const cutoff = iso(sy, sm, 1);

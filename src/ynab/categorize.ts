@@ -74,21 +74,45 @@ function readObjectLiteral(text: string): Record<string, string> | null {
   return Object.keys(fields).length ? fields : null;
 }
 
-/** Fields from JSON memos and the older JavaScript object-text format. */
+const MEMO_CACHE_LIMIT = 20_000;
+const memoFieldsCache = new Map<string, Record<string, unknown> | null>();
+const memoCache = new Map<string, { bankText: string; sector: string; handNote: string }>();
+
+/** Fields from JSON memos and the older JavaScript object-text format. Cached by memo text: the result is frozen. */
 export function readMemoFields(memo: string | null): Record<string, unknown> | null {
-  const text = memo?.trim() ?? "";
+  if (!memo) return null;
+  if (memoFieldsCache.has(memo)) return memoFieldsCache.get(memo)!;
+  const result = parseMemoFields(memo);
+  if (memoFieldsCache.size >= MEMO_CACHE_LIMIT) memoFieldsCache.clear();
+  memoFieldsCache.set(memo, result);
+  return result;
+}
+
+function parseMemoFields(memo: string): Record<string, unknown> | null {
+  const text = memo.trim();
   if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    return parsed && typeof parsed === "object" ? Object.freeze(parsed) : null;
   } catch {
-    return text.startsWith("{") ? readObjectLiteral(text) : null;
+    const fields = text.startsWith("{") ? readObjectLiteral(text) : null;
+    return fields && Object.freeze(fields);
   }
 }
 
-/** Bank text, card sector, and any memo typed by hand. Older importers used "notes" or "Secret Text". */
+/** Bank text, card sector, and any memo typed by hand. Older importers used "notes" or "Secret Text". Cached by memo text: the result is frozen. */
 export function readMemo(memo: string | null): { bankText: string; sector: string; handNote: string } {
-  const text = memo?.trim() ?? "";
+  if (!memo) return { bankText: "", sector: "", handNote: "" };
+  const cached = memoCache.get(memo);
+  if (cached) return cached;
+  const result = Object.freeze(parseMemo(memo));
+  if (memoCache.size >= MEMO_CACHE_LIMIT) memoCache.clear();
+  memoCache.set(memo, result);
+  return result;
+}
+
+function parseMemo(memo: string): { bankText: string; sector: string; handNote: string } {
+  const text = memo.trim();
   if (!text) return { bankText: "", sector: "", handNote: "" };
   let parsed: unknown;
   try {

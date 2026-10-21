@@ -129,7 +129,9 @@ router.get(
     loadAppEnv({ override: true });
     // quick=1: reload after a settings change; reuses the last YNAB read.
     // fresh=1: the Refresh button; read YNAB now instead of reusing a recent read.
-    return getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1", fresh: req.query.fresh === "1" });
+    // baseline and upcoming are for the monthly report only; the GUI does not read them.
+    const { baseline, upcoming, ...rest } = await getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1", fresh: req.query.fresh === "1" });
+    return rest;
   })
 );
 

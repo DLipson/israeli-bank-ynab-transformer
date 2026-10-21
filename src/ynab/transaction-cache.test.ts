@@ -30,9 +30,22 @@ describe("getAllTransactions reuse", () => {
     expect(ynabRequest.mock.calls.length).toBe(first);
     writes = 1;
     await getAllTransactions("t", "b1");
+    // The first download was the snapshot, so this read is the delta only (1 call, not 2 as before).
     expect(ynabRequest.mock.calls.length).toBeGreaterThan(first);
     const afterWrite = ynabRequest.mock.calls.length;
     await getAllTransactions("t", "b1", { fresh: true });
     expect(ynabRequest.mock.calls.length).toBeGreaterThan(afterWrite);
+  });
+
+  it("runs the 2-month snapshot only on the first read after start and on a fresh read", async () => {
+    await getAllTransactions("t", "b2"); // no cache yet: full download
+    writes = 1;
+    ynabRequest.mockClear();
+    await getAllTransactions("t", "b2");
+    expect(ynabRequest).toHaveBeenCalledTimes(1); // delta only
+    writes = 2;
+    ynabRequest.mockClear();
+    await getAllTransactions("t", "b2", { fresh: true });
+    expect(ynabRequest).toHaveBeenCalledTimes(2); // delta and snapshot
   });
 });

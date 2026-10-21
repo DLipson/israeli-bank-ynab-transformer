@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildYnabTransactions, getRowSource } from "./import-service.js";
 import type { YnabRow } from "../transformer.js";
 
@@ -61,5 +61,48 @@ describe("buildYnabTransactions", () => {
       mappings
     );
     expect(transactions[0].payee_name).toHaveLength(200);
+  });
+});
+
+describe("ynabRequest sharing", () => {
+  const ok = () => new Response(JSON.stringify({ data: { n: 1 } }), { status: 200 });
+
+  async function load(respond: () => Response = ok) {
+    vi.resetModules();
+    const fetchMock = vi.fn(async () => respond());
+    vi.stubGlobal("fetch", fetchMock);
+    const { ynabRequest } = await import("./import-service.js");
+    return { fetchMock, ynabRequest };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shares concurrent GETs of the same path", async () => {
+    const { fetchMock, ynabRequest } = await load();
+    await Promise.all([ynabRequest("t", "/budgets"), ynabRequest("t", "/budgets")]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads again after a write", async () => {
+    const { fetchMock, ynabRequest } = await load();
+    await ynabRequest("t", "/budgets");
+    await ynabRequest("t", "/budgets", { method: "POST", body: "{}" });
+    await ynabRequest("t", "/budgets");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("reads again when fresh is true", async () => {
+    const { fetchMock, ynabRequest } = await load();
+    await ynabRequest("t", "/budgets");
+    await ynabRequest("t", "/budgets", { fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1] as unknown[])[1]).not.toHaveProperty("fresh");
+  });
+
+  it("does not reuse a failed GET", async () => {
+    const { fetchMock, ynabRequest } = await load(() => new Response("{}", { status: 500 }));
+    await expect(ynabRequest("t", "/budgets")).rejects.toThrow();
+    await expect(ynabRequest("t", "/budgets")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

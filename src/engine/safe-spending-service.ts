@@ -5,12 +5,9 @@ import { ensureAppConfigDirExists, getAppConfigDir } from "../env.js";
 import { loadYnabImportConfig, ynabRequest, ynabWrites } from "../ynab/import-service.js";
 import { getAllTransactions } from "../ynab/transaction-cache.js";
 import {
-  creditExposure,
   DEFAULT_SETTINGS,
   leftCashflow,
-  leftYnab,
   obligations,
-  periodEndDate,
   scheduledOutflows,
   spendingCategories,
   suggestScheduled,
@@ -87,9 +84,9 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const data: YnabData = reuse
     ? lastYnab!.data
     : await Promise.all([
-        ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`),
-        ynabRequest<{ month: Month }>(token, `${budget}/months/current`),
-        ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`),
+        ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`, { fresh: options.fresh }),
+        ynabRequest<{ month: Month }>(token, `${budget}/months/current`, { fresh: options.fresh }),
+        ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`, { fresh: options.fresh }),
         getAllTransactions(token, loadYnabImportConfig().budgetId, { fresh: options.fresh }),
       ]);
   if (!reuse) lastYnab = { budget, at: Date.now(), writes: ynabWrites(), data };
@@ -102,8 +99,6 @@ export async function getSpending(token: string, today = new Date().toISOString(
   const snapshot: Snapshot = { today, accounts, month, transactions, scheduled, settings };
   const cashflow = leftCashflow(snapshot);
   const cards = cardGroups(snapshot);
-  const ynab = leftYnab(snapshot);
-  const end = periodEndDate(today, settings.payday);
   // The user's income marks change only the income and spending lists, not balances or cards.
   const flowTransactions = applyIncomeMarks(transactions, settings.incomeMarks);
   const items = spendItems(flowTransactions);
@@ -131,18 +126,11 @@ export async function getSpending(token: string, today = new Date().toISOString(
     /** When these numbers were read from YNAB (shown in the header). */
     ynabReadAt,
     lastScrapedAt,
-    periodEnd: end,
-    monthlyFlow,
     spentVsIncome,
     available: cashflow,
     cards,
     watch: watchItems(cards, comparisons, settings.toCheck),
     settings,
-    cashflow,
-    ynab,
-    gap: cashflow.total - ynab.total,
-    readyToAssign: month.to_be_budgeted,
-    exposure: creditExposure(snapshot),
     obligations: obligations(snapshot),
     suggestions: suggestScheduled(snapshot),
     baseline: spendBaseline,
@@ -166,7 +154,6 @@ export async function getSpending(token: string, today = new Date().toISOString(
     uncategorizedCount: transactions.filter(
       (t) => !t.deleted && t.date >= since && !t.transfer_account_id && !t.subtransactions?.length && isUncategorized(t)
     ).length,
-    scheduledCount: scheduled.filter((s) => !s.deleted).length,
     accounts: accounts
       .filter((a) => a.on_budget && !a.closed && !a.deleted)
       .map(({ id, name, type, balance }) => ({ id, name, type, balance })),
