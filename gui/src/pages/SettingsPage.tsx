@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getInflows, saveSpendingSettings, setIncomeMark, type CategoryOption, type CreditLimitGroup, type IncomeMark, type Inflow, type SpendingData, type SpendingSettings } from "@/api/client";
+import { getInflows, saveSpendingSettings, setIncomeMark, type CreditLimitGroup, type IncomeMark, type Inflow, type SpendingData, type SpendingSettings } from "@/api/client";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { YnabPage } from "@/pages/YnabPage";
 import { ReconcilePage } from "@/pages/ReconcilePage";
 import { SpendingLoading } from "@/pages/SpendingPage";
+import { MultiSelect } from "@/components/MultiSelect";
 import { card, label, link, row } from "@/lib/rows";
 import { K, formatDate, shekels, useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
@@ -196,13 +197,8 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
   const { reload } = useSpending();
   const s = data.settings;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [essentials, setEssentials] = useState(() => new Set(s.essentialCategoryIds));
+  const [essentials, setEssentials] = useState(s.essentialCategoryIds);
   const [limitsOpen, setLimitsOpen] = useState(false);
-  const byGroup = useMemo(() => {
-    const map = new Map<string, CategoryOption[]>();
-    for (const c of data.categories) map.set(c.group, [...(map.get(c.group) ?? []), c]);
-    return [...map];
-  }, [data.categories]);
 
   const save = async (patch: Partial<SpendingSettings>): Promise<boolean> => {
     setMessage(null);
@@ -217,12 +213,9 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
     }
   };
 
-  const toggleEssential = (id: string) => {
-    const next = new Set(essentials);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setEssentials(next);
-    void save({ essentialCategoryIds: [...next] });
+  const setEssentialList = (ids: string[]) => {
+    setEssentials(ids);
+    void save({ essentialCategoryIds: ids });
   };
 
   return (
@@ -257,18 +250,14 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
       <div className="border-t pt-2">
         <p className="text-sm">Everyday essentials</p>
         <p className="mb-1.5 text-xs text-muted-foreground">Categories that you must spend on every week. Only these get a pace and a forecast until payday.</p>
-        <div className="grid gap-x-6 gap-y-2 pb-2 sm:grid-cols-2">
-          {byGroup.map(([group, list]) => (
-            <div key={group}>
-              <p className="text-xs font-semibold text-muted-foreground">{group}</p>
-              {list.map((c) => (
-                <label key={c.id} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={essentials.has(c.id)} onChange={() => toggleEssential(c.id)} />
-                  <span dir="auto">{c.name}</span>
-                </label>
-              ))}
-            </div>
-          ))}
+        <div className="pb-2">
+          <MultiSelect
+            label="Everyday essentials"
+            placeholder="Type to find a category…"
+            options={data.categories.map((c) => ({ id: c.id, label: c.name, group: c.group }))}
+            selected={essentials}
+            onChange={setEssentialList}
+          />
         </div>
       </div>
 
