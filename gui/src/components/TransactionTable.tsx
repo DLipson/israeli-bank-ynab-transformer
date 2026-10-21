@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from "lucide-react";
 import type { YnabRow } from "@/api/client";
+import { parseChargeDate } from "../../../src/engine/charge-date.js";
 
 interface TransactionTableProps {
   rows: YnabRow[];
@@ -31,7 +32,8 @@ function MemoDisplay({ memo }: { memo: string }) {
   if (!parsed) return <span className="text-muted-foreground">{memo}</span>;
 
   const parts: string[] = [];
-  if (parsed.chargeDate) parts.push(`charged: ${parsed.chargeDate as string}`);
+  const chargeDate = parseChargeDate(memo);
+  if (chargeDate) parts.push(`charged: ${chargeDate}`);
   if (parsed.installment) parts.push(`installment: ${parsed.installment as string}`);
   if (parsed.source) parts.push(`source: ${parsed.source as string}`);
   if (parsed.originalAmount) {

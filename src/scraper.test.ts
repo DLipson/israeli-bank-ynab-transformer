@@ -149,7 +149,82 @@ describe("scrapeAccount", () => {
     });
     expect(mockedCreateScraper).toHaveBeenCalledTimes(1);
   });
+
+  it("closes the browser and returns Canceled when aborted during scrape", async () => {
+    const controller = new AbortController();
+    const { scraper, release } = makePendingScraper();
+    mockedCreateScraper.mockReturnValue(scraper);
+
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, undefined, controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    expect(scraper.terminate).toHaveBeenCalledWith(false);
+    release({ success: false, errorType: "GENERIC", errorMessage: "Target closed" });
+
+    await expect(promise).resolves.toMatchObject({ success: false, error: "Canceled" });
+  });
+
+  it("closes the browser only once even when terminate reports progress", async () => {
+    const controller = new AbortController();
+    const { scraper, release } = makePendingScraper();
+    mockedCreateScraper.mockReturnValue(scraper);
+    const messages: string[] = [];
+
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, (m) => messages.push(m), controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    expect(scraper.terminate).toHaveBeenCalledTimes(1);
+
+    const callback = vi.mocked(scraper.onProgress).mock.calls[0][0];
+    callback("leumi" as never, { type: "LOGGING_IN" } as never);
+    expect(scraper.terminate).toHaveBeenCalledTimes(1);
+    expect(messages.filter((m) => m.includes("TERMINATING"))).toHaveLength(1);
+
+    release({ success: false, errorType: "GENERIC", errorMessage: "Target closed" });
+    await promise;
+  });
+
+  it("does not start the scraper when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const scraper = makeScraper({ success: true, accounts: [] });
+    mockedCreateScraper.mockReturnValue(scraper);
+
+    await expect(
+      scrapeAccount(makeAccount(), new Date("2026-06-01"), false, undefined, controller.signal)
+    ).resolves.toMatchObject({ success: false, error: "Canceled" });
+    expect(scraper.scrape).not.toHaveBeenCalled();
+  });
+
+  it("does not retry an aborted scrape that fails with a timeout", async () => {
+    const controller = new AbortController();
+    const { scraper, release } = makePendingScraper();
+    mockedCreateScraper.mockReturnValue(scraper);
+
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, undefined, controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    release({ success: false, errorType: "TIMEOUT", errorMessage: "timeout" });
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await expect(promise).resolves.toMatchObject({ success: false, error: "Canceled" });
+    expect(mockedCreateScraper).toHaveBeenCalledTimes(1);
+  });
 });
+
+function makePendingScraper() {
+  let release!: (result: unknown) => void;
+  let cb: ((id: string, payload: { type: string }) => void) | undefined;
+  // Like the real library: terminate emits a progress event at once.
+  const scraper = {
+    onProgress: vi.fn((fn) => void (cb = fn)),
+    scrape: vi.fn().mockReturnValue(new Promise((resolve) => (release = resolve))),
+    terminate: vi.fn(async () => {
+      cb?.("id", { type: "TERMINATING" });
+    }),
+  } as unknown as ReturnType<typeof createScraper> & { terminate: ReturnType<typeof vi.fn> };
+  return { scraper, release };
+}
 
 function makeAccount(): AccountConfig {
   return {
@@ -213,6 +288,17 @@ describe("scrapeAllAccounts concurrency", () => {
 
     expect(maxActive).toBeLessThanOrEqual(2);
     expect(results.map((r) => r.accountName)).toEqual(["A", "B", "C"]);
+  });
+
+  it("passes the abort signal to scrapeFn", async () => {
+    const { scrapeAllAccounts } = await import("./scraper.js");
+    const controller = new AbortController();
+    const scrapeFn = vi.fn().mockResolvedValue({ accountName: "A", success: true, transactions: [] });
+    const accounts = [{ name: "A", bankName: "A", companyId: 1 as any, credentials: {}, enabled: true }];
+
+    await scrapeAllAccounts(accounts, new Date("2024-01-01"), false, undefined, controller.signal, { scrapeFn });
+
+    expect(scrapeFn.mock.calls[0][4]).toBe(controller.signal);
   });
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createScrapeStream,
   cancelScrape,
@@ -15,12 +15,15 @@ import {
   readStoredJson,
   removeStored,
   writeStoredJson,
+  type AccountStatus,
   type Phase,
   type ScrapeRunParams,
   type ScrapeRunState,
 } from "@/lib/scrape-run";
-import type { AccountStatus } from "@/components/ScrapeProgress";
 import type { LogEntry } from "@/components/ScrapeLogs";
+
+/** The log keeps the last 5,000 lines, so a very long run does not grow memory without limit. */
+const MAX_ENTRIES = 5000;
 
 /** Holds the live run above the tabs, so leaving the view does not stop the stream. */
 export function ScrapeRunProvider({ children }: { children: ReactNode }) {
@@ -119,15 +122,16 @@ export function ScrapeRunProvider({ children }: { children: ReactNode }) {
         (event: SSEEvent) => {
           switch (event.type) {
             case "warning":
-              setEntries((prev) => [...prev, { text: `Warning: ${event.message}` }]);
+              setEntries((prev) => [...prev, { text: `Warning: ${event.message}` }].slice(-MAX_ENTRIES));
               break;
 
             case "progress":
-              setEntries((prev) => [...prev, { text: event.message ?? "", account: event.account }]);
+              setEntries((prev) => [...prev, { text: event.message ?? "", account: event.account }].slice(-MAX_ENTRIES));
               if (event.message) {
-                const match = event.message.match(/^Scraping (.+)\.\.\.$/);
+                // The server sends "\nScraping <name>...", with a leading newline.
+                const match = event.message.match(/^\s*Scraping (.+)\.\.\.$/);
                 if (match) {
-                  const name = match[1].replace(/^\n/, "");
+                  const name = match[1];
                   setAccountStatuses((prev) => {
                     const exists = prev.find((a) => a.name === name);
                     if (exists) {
@@ -208,21 +212,24 @@ export function ScrapeRunProvider({ children }: { children: ReactNode }) {
     setError("");
   }, []);
 
-  const value: ScrapeRunState = {
-    phase,
-    accountStatuses,
-    entries,
-    payload,
-    lastScrapeAt,
-    error,
-    ynabResult,
-    ynabImporting,
-    start,
-    cancel,
-    reset,
-    setError,
-    importRows,
-  };
+  const value: ScrapeRunState = useMemo(
+    () => ({
+      phase,
+      accountStatuses,
+      entries,
+      payload,
+      lastScrapeAt,
+      error,
+      ynabResult,
+      ynabImporting,
+      start,
+      cancel,
+      reset,
+      setError,
+      importRows,
+    }),
+    [phase, accountStatuses, entries, payload, lastScrapeAt, error, ynabResult, ynabImporting, start, cancel, reset, importRows]
+  );
 
   return <ScrapeRunContext.Provider value={value}>{children}</ScrapeRunContext.Provider>;
 }

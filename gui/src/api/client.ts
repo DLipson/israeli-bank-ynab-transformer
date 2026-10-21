@@ -279,7 +279,8 @@ export async function getLlmSuggestions(ids: string[]): Promise<Record<string, C
   })).suggestions;
 }
 
-export async function acceptCategory(id: string, categoryId: string): Promise<void> {
+/** YNAB write. categoryId null clears the category (Inbox Undo only). */
+export async function acceptCategory(id: string, categoryId: string | null): Promise<void> {
   await request("/categorize/accept", { method: "POST", body: JSON.stringify({ id, categoryId }) });
 }
 
@@ -312,14 +313,113 @@ export interface CreditLimitGroup {
 
 export interface SpendingSettings {
   mode: "cashflow" | "ynab";
-  periodEnd: "month-end" | number;
+  /** The period ends the day before payday. */
+  payday: "month-start" | number;
   buffer: number;
   flexibleCategoryIds: string[];
+  essentialCategoryIds: string[];
+  essentialsOverride: { period: string; amounts: Record<string, number> } | null;
+  cardWarningLevel: number;
   creditLimits: CreditLimitGroup[];
-  overdraft: { limitAccountId: string; accountId: string } | null;
   ignoredSuggestions: string[];
   baselineMonths: number;
-  subtractExpected: boolean;
+  dismissedAnomalies: string[];
+  createdScheduleIds: string[];
+  refundLinks: Array<{ refundTxId: string; purchaseTxId: string }>;
+  incomeMarks: Record<string, IncomeMark>;
+  toCheck: Array<{ id: string; title: string; detail: string; date: string; amount: number }>;
+  /** Old keys: the server no longer returns them. Sent by the old Setup page until phase 11. */
+  periodEnd?: "month-end" | number;
+  overdraft?: { limitAccountId: string; accountId: string } | null;
+  subtractExpected?: boolean;
+}
+
+/** One transaction behind a figure. */
+export interface TxRef {
+  id: string;
+  date: string;
+  /** Show with dir="auto". */
+  payee: string;
+  account: string;
+  category: string | null;
+  /** Signed, as in YNAB. */
+  amount: number;
+}
+
+export type CategoryType = "essential" | "occasional" | "fixed";
+
+export interface CategoryComparison {
+  categoryId: string;
+  name: string;
+  type: CategoryType;
+  thisMonth: number;
+  compareTo: number;
+  compareLabel: "normal by this day" | "12-month average" | "normal month";
+  difference: number;
+  items: TxRef[];
+}
+
+export interface SpentVsIncome {
+  month: string;
+  spent: number;
+  income: number;
+  /** income − spent; negative = spent more than earned. */
+  difference: number;
+  daysLeft: number;
+  incomeParts: Array<{ label: string; amount: number; items: Array<TxRef & { oneTime: boolean }> }>;
+  /** A refund linked by "Treat as refund" shows the purchase it belongs to. */
+  spendingItems: Array<TxRef & { refundOf?: { payee: string; date: string } }>;
+  savedThisMonth: { amount: number; items: TxRef[] };
+  reasons: CategoryComparison[];
+  uncategorized: { amount: number; count: number };
+}
+
+export interface AvailableItem {
+  label: string;
+  /** Signed: negative lowers the total. */
+  amount: number;
+  date?: string;
+  txId?: string;
+  categoryId?: string;
+  assigned?: number;
+  normal?: number;
+}
+
+export interface AvailableUntilPayday {
+  periodEnd: string;
+  total: number;
+  lines: Array<{ key: "cash" | "cards" | "bills" | "essentials" | "buffer"; label: string; amount: number; items: AvailableItem[] }>;
+  warnings: string[];
+  essentialsNotChosen: boolean;
+  essentialsOverridden: boolean;
+}
+
+export interface CardGroup {
+  name: string;
+  limit: number | null;
+  balance: number;
+  futureInstallments: number;
+  futureInterest: number;
+  unexplained: number;
+  headroom: number | null;
+  state: "ok" | "low" | "over" | "no-limit";
+  nextPayment: {
+    date: string | null;
+    total: number;
+    newPurchases: { amount: number; items: TxRef[] };
+    olderInstallments: { amount: number; items: Array<TxRef & { payment: string }> };
+  };
+  futureByMonth: Array<{
+    month: string;
+    amount: number;
+    plans: Array<{ payee: string; account: string; payment: number; paymentsLeft: number }>;
+  }>;
+}
+
+export interface WatchItem {
+  kind: "card-low" | "card-over" | "essential-over-pace" | "to-check";
+  label: string;
+  target: { tab: "cards"; group: string } | { tab: "home"; categoryId: string } | { tab: "check"; id: string };
 }
 
 export interface Pace {
@@ -331,9 +431,30 @@ export interface Pace {
   status: "under" | "on" | "over" | "fixed-paid" | "fixed-due";
 }
 
+/** A reconcile difference: a bank row YNAB does not have, or a YNAB transaction the scrapes do not have. */
+export interface MissingItem {
+  id: string;
+  side: "not-in-ynab" | "not-in-bank";
+  accountName: string;
+  date: string;
+  /** Signed milliunits. */
+  amount: number;
+  payee: string;
+}
+
+/** YNAB write: imports one missing bank row. Only from the user's Import click. Returns the new transaction id. */
+export async function importMissing(id: string): Promise<string> {
+  return (await request<{ transactionId: string }>(`/spending/missing/${encodeURIComponent(id)}/import`, { method: "POST" })).transactionId;
+}
+
+/** YNAB write: Undo of Import. Deletes the transaction that Import added. */
+export async function deleteImported(transactionId: string): Promise<void> {
+  await request(`/spending/missing/imported/${encodeURIComponent(transactionId)}`, { method: "DELETE" });
+}
+
 export interface Anomaly {
   id: string;
-  kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase";
+  kind: "unusual-charge" | "new-payee" | "duplicate" | "category-spike" | "price-increase" | "installment-twice" | "full-and-installments";
   date: string;
   title: string;
   detail: string;
@@ -363,37 +484,37 @@ export interface ScheduleSuggestion {
 }
 
 export interface SpendingData {
-  monthlyFlow: {
-    month: string;
-    expenses: number;
-    planActivity: number | null;
-    income: number;
-    incomeThisMonth: number;
-    carriedIncome: number;
-    carryoverFrom: string;
-    carryoverTo: string;
-  };
   today: string;
+  /** When the server read these numbers from YNAB. */
+  ynabReadAt?: string;
   lastScrapedAt: string | null;
-  periodEnd: string;
+  spentVsIncome: SpentVsIncome;
+  available: AvailableUntilPayday;
+  cards: CardGroup[];
+  watch: WatchItem[];
   settings: SpendingSettings;
-  cashflow: LeftToSpend;
-  ynab: LeftToSpend;
-  gap: number;
-  readyToAssign: number;
-  exposure: Array<{ name: string; limit: number | null; used: number; unused: number | null; lines: SpendingLine[] }>;
-  obligations: Array<{ month: string; installments: number; scheduled: number; total: number }>;
+  obligations: Array<{
+    month: string;
+    installments: number;
+    scheduled: number;
+    total: number;
+    items: {
+      scheduled: Array<{ label: string; date: string; amount: number }>;
+      installments: Array<{ payee: string; account: string; payment: number; paymentsLeft: number }>;
+    };
+  }>;
   suggestions: ScheduleSuggestion[];
-  scheduledCount: number;
-  baseline: Baseline;
   uncategorizedCount: number;
   anomalies: Anomaly[];
+  missing: MissingItem[];
   accounts: Array<{ id: string; name: string; type: string; balance: number }>;
   categories: CategoryOption[];
 }
 
-export async function getSpending(): Promise<SpendingData> {
-  return request("/spending");
+/** quick: after a settings change; the server reuses its last YNAB read. */
+/** quick: only the settings changed. fresh: the Refresh button; the server reads YNAB now. */
+export async function getSpending(options: { quick?: boolean; fresh?: boolean } = {}): Promise<SpendingData> {
+  return request(options.fresh ? "/spending?fresh=1" : options.quick ? "/spending?quick=1" : "/spending");
 }
 
 export async function saveSpendingSettings(settings: Partial<SpendingSettings>): Promise<SpendingSettings> {
@@ -406,17 +527,90 @@ export async function createScheduled(s: {
   amount: number;
   payeeName: string;
   categoryId: string | null;
-}): Promise<void> {
-  await request("/spending/scheduled", { method: "POST", body: JSON.stringify(s) });
+}): Promise<string> {
+  return (await request<{ ok: true; id: string }>("/spending/scheduled", { method: "POST", body: JSON.stringify(s) })).id;
 }
 
 export async function ignoreScheduleSuggestion(id: string): Promise<void> {
   await request("/spending/ignore", { method: "POST", body: JSON.stringify({ id }) });
 }
 
+// --- Treat as refund ---
+
+export interface Purchase {
+  id: string;
+  date: string;
+  payee: string;
+  account: string;
+  category: string | null;
+  categoryId: string;
+  amount: number;
+}
+
+/** Purchases of the last 90 days with one category, newest first. */
+export async function getPurchases(): Promise<Purchase[]> {
+  return (await request<{ purchases: Purchase[] }>("/spending/purchases")).purchases;
+}
+
+/** YNAB write: the refund gets the purchase's category. Only from the user's click. */
+export async function treatAsRefund(refundTxId: string, purchaseTxId: string): Promise<void> {
+  await request("/spending/refund", { method: "POST", body: JSON.stringify({ refundTxId, purchaseTxId }) });
+}
+
+// --- Income marks (local only) ---
+
+/** "not-income": leave a money-in entry out (a reconciliation). "income": count it (a transfer, for example). */
+export type IncomeMark = "income" | "not-income";
+
+export interface Inflow {
+  id: string;
+  date: string;
+  payee: string;
+  account: string;
+  category: string | null;
+  transfer: boolean;
+  amount: number;
+  mark: IncomeMark | null;
+}
+
+/** Money-in transactions of the last 120 days, transfers included. */
+export async function getInflows(): Promise<Inflow[]> {
+  return (await request<{ inflows: Inflow[] }>("/spending/inflows")).inflows;
+}
+
+export async function setIncomeMark(id: string, mark: IncomeMark | null): Promise<void> {
+  await request("/spending/income-marks", { method: "POST", body: JSON.stringify({ id, mark }) });
+}
+
+// --- Inbox Undo ---
+
+/** "Check it": puts an unusual item on the To check list (Things to watch). Local only. */
+export async function checkAnomaly(a: Pick<Anomaly, "id" | "title" | "detail" | "date" | "amount">): Promise<void> {
+  const { id, ...item } = a;
+  await request(`/spending/anomalies/${encodeURIComponent(id)}/check`, { method: "POST", body: JSON.stringify(item) });
+}
+
+export async function uncheckAnomaly(id: string): Promise<void> {
+  await request(`/spending/anomalies/${encodeURIComponent(id)}/uncheck`, { method: "POST" });
+}
+
+export async function restoreAnomaly(id: string): Promise<void> {
+  await request(`/spending/anomalies/${encodeURIComponent(id)}/restore`, { method: "POST" });
+}
+
+export async function restoreScheduleSuggestion(id: string): Promise<void> {
+  await request(`/spending/suggestions/${encodeURIComponent(id)}/restore`, { method: "POST" });
+}
+
+/** YNAB write: deletes a schedule that this app created. Only from the user's Undo click. */
+export async function deleteCreatedScheduled(id: string): Promise<void> {
+  await request(`/spending/scheduled/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // --- Reports ---
 
-export type ReportType = "weekly" | "month-start" | "month-end";
+/** "monthly" is made now; the others are older saved reports, still readable. */
+export type ReportType = "monthly" | "weekly" | "month-start" | "month-end";
 
 export interface Report {
   type: ReportType;
@@ -431,6 +625,7 @@ export interface Report {
     note?: string;
     explanation?: string;
     details?: Array<{ label: string; value: string; tone?: "good" | "bad" | "warn" | "muted" }>;
+    chart?: Array<{ month: string; income: number; spent: number }>;
   }>;
 }
 

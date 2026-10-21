@@ -114,15 +114,46 @@ export function getYnabToken(): string {
   return token;
 }
 
-export async function ynabRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+/** Writes sent to YNAB by this server; a read remembered before a write is not reused. */
+let writes = 0;
+export const ynabWrites = (): number => writes;
+
+const SHARE_MS = 60_000;
+const sharedReads = new Map<string, { at: number; writes: number; read: Promise<unknown> }>();
+
+/** When the shared GET of this path was read, if there is one. */
+export const ynabReadTime = (path: string): number | undefined => sharedReads.get(path)?.at;
+
+/**
+ * Sends a YNAB request. A GET of the same path is shared for a minute (and while it runs), until this
+ * server writes to YNAB; `fresh: true` reads again. Other methods are never shared.
+ */
+export function ynabRequest<T>(token: string, path: string, init: RequestInit & { fresh?: boolean } = {}): Promise<T> {
+  const { fresh, ...fetchInit } = init;
+  if (fetchInit.method && fetchInit.method !== "GET") return sendYnabRequest<T>(token, path, fetchInit);
+  const hit = sharedReads.get(path);
+  if (!fresh && hit && hit.writes === writes && Date.now() - hit.at < SHARE_MS) return hit.read as Promise<T>;
+  const entry = { at: Date.now(), writes, read: sendYnabRequest<T>(token, path, fetchInit) };
+  sharedReads.set(path, entry);
+  entry.read.catch(() => {
+    if (sharedReads.get(path) === entry) sharedReads.delete(path);
+  });
+  return entry.read as Promise<T>;
+}
+
+async function sendYnabRequest<T>(token: string, path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${YNAB_API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
+  if (init.method && init.method !== "GET") writes++;
   const body = (await response.json().catch(() => ({}))) as {
     data?: T;
     error?: { detail?: string };
   };
+  if (response.status === 429) {
+    throw new Error("YNAB says too many requests (it allows 200 an hour). Wait a few minutes, then refresh.");
+  }
   if (!response.ok || !body.data) {
     throw new Error(`YNAB request failed (${response.status}): ${body.error?.detail ?? response.statusText}`);
   }

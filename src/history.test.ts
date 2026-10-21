@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getRun, listRuns, saveRun, updateRun } from "./history.js";
+import { getHistoryDir } from "./env.js";
+import { getRun, listRuns, readRunSummaryCached, saveRun, updateRun } from "./history.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const input = {
@@ -46,6 +47,23 @@ describe("scrape history", () => {
     saveRun(input, 1_091 * DAY);
     expect(getRun(old)).toBeNull();
     expect(listRuns()).toHaveLength(1);
+  });
+
+  it("reuses the summary of an unchanged file and reads it again when the file changes", () => {
+    const id = saveRun(input, 1_000 * DAY);
+    expect(listRuns()[0]).toMatchObject({ rowCount: 2 });
+    expect(listRuns()[0]).toBe(listRuns()[0]);
+    const changed = { ...getRun(id)!, payload: { ...input.payload, rows: [{}, {}, {}] } };
+    writeFileSync(join(getHistoryDir(), `${id}.json`), JSON.stringify(changed) + " ", "utf-8");
+    expect(listRuns()[0]).toMatchObject({ rowCount: 3 });
+  });
+
+  it("does not keep a deleted run", () => {
+    const id = saveRun(input, 1_000 * DAY);
+    listRuns();
+    unlinkSync(join(getHistoryDir(), `${id}.json`));
+    expect(listRuns()).toEqual([]);
+    expect(readRunSummaryCached(id)).toBeNull();
   });
 
   it("rejects ids that are not run ids", () => {

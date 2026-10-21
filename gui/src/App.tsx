@@ -1,119 +1,145 @@
 import { useState, type ReactNode } from "react";
+import { ChevronLeft, RotateCw, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AccountsPage } from "@/pages/AccountsPage";
 import { ScrapePage } from "@/pages/ScrapePage";
-import { YnabPage } from "@/pages/YnabPage";
 import { HistoryPage } from "@/pages/HistoryPage";
 import { CategorizePage } from "@/pages/CategorizePage";
 import { HomePage } from "@/pages/HomePage";
-import { ReconcilePage } from "@/pages/ReconcilePage";
-import { AnomaliesPanel, ReportsPanel, SchedulesPanel, SpendingProvider, SpendingSettingsPanel } from "@/pages/SpendingPage";
+import { InboxPage } from "@/pages/InboxPage";
+import { CardsPage } from "@/pages/CardsPage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import { SpendingProvider } from "@/pages/SpendingPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
+import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
+import { link } from "@/lib/rows";
+import { cn } from "@/lib/utils";
 
-/** A second row of tabs inside a top tab (e.g. Review: Categorize | Schedules). */
-function SubTabs({
-  value,
-  onChange,
-  items,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  items: Array<{ value: string; label: ReactNode; content: ReactNode }>;
-}) {
+/** "14:32" today, else "20 Oct 14:32". */
+function readTime(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("en-IL", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString("en-IL", { day: "numeric", month: "short" })} ${time}`;
+}
+
+/** Pages with no tab of their own: they open from a tab, show a way back to it, and keep it lit. */
+const PARENT: Record<string, { tab: string; label: string }> = {
+  reports: { tab: "home", label: "Home" },
+  categorize: { tab: "inbox", label: "Inbox" },
+  history: { tab: "scrape", label: "Scrape" },
+};
+
+function Pane({ value, visited, onBack, children }: { value: string; visited: Set<string>; onBack: (tab: string) => void; children: ReactNode }) {
+  if (!visited.has(value)) return null;
+  const parent = PARENT[value];
   return (
-    <Tabs value={value} onValueChange={onChange}>
-      <TabsList className="mb-3 h-8">
-        {items.map((i) => (
-          <TabsTrigger key={i.value} value={i.value} className="gap-1.5 py-0.5 text-xs">
-            {i.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      {items.map((i) => (
-        <TabsContent key={i.value} value={i.value}>
-          {i.content}
-        </TabsContent>
-      ))}
-    </Tabs>
+    <TabsContent value={value} forceMount className="data-[state=inactive]:hidden">
+      {parent && (
+        <button type="button" className={cn(link, "mb-3 flex items-center gap-1")} onClick={() => onBack(parent.tab)}>
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" /> {parent.label}
+        </button>
+      )}
+      {children}
+    </TabsContent>
   );
 }
 
-function Count({ n }: { n: number }) {
-  return n > 0 ? <span className="rounded-full bg-amber-100 px-1.5 text-[11px] leading-4 text-amber-800">{n}</span> : null;
-}
+/** Old tab names that pages still pass to navigate(). */
+const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
 
 function Shell() {
-  const { data } = useSpending();
+  const { data, loading, reload, freshCount } = useSpending();
   const [tab, setTab] = useState("home");
-  const [views, setViews] = useState<Record<string, string>>({ scrape: "scrape", review: "categorize", setup: "accounts" });
+  // A tab mounts when it is first opened and then stays mounted, so opening it again does not reload its data.
+  const [visited, setVisited] = useState(() => new Set(["home"]));
+  if (!visited.has(tab)) setVisited(new Set(visited).add(tab));
+  const [views, setViews] = useState<Record<string, string>>({ settings: "main" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
   const navigate = (t: string, v?: string) => {
-    if (v) setView(t)(v);
-    setTab(t);
+    const target = OLD_TABS[t] ?? t;
+    if (v) setView(target)(v);
+    setTab(target);
   };
+  // A page without a tab keeps the tab it opened from lit.
+  const lit = (t: string) => (PARENT[tab]?.tab === t ? "bg-background text-foreground shadow" : undefined);
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
   const unusual = data?.anomalies.length ?? 0;
+  const missing = data?.missing.length ?? 0;
+  // While the Inbox is open its own queue gives the count; otherwise the counts from the numbers.
+  // Keep this sum in step with buildQueue (gui/src/lib/inbox.ts): one term per kind of card.
+  const [inboxQueueLeft, setInboxQueueLeft] = useState<number | null>(null);
+  const inboxLeft = inboxQueueLeft ?? schedules + uncategorized + unusual + missing;
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <h1 className="mb-4 text-2xl font-bold">Israeli Bank YNAB</h1>
-
+    <div className="mx-auto max-w-[680px] px-4 py-6">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="home">Home</TabsTrigger>
-          <TabsTrigger value="scrape">Scrape</TabsTrigger>
-          <TabsTrigger value="review" className="gap-1.5">
-            Review <Count n={schedules + uncategorized + unusual} />
-          </TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-          <TabsTrigger value="setup">Setup</TabsTrigger>
-        </TabsList>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <TabsList>
+            <TabsTrigger value="home" className={lit("home")}>Home</TabsTrigger>
+            <TabsTrigger value="inbox" className={lit("inbox")}>Inbox{inboxLeft > 0 && ` · ${inboxLeft}`}</TabsTrigger>
+            <TabsTrigger value="cards" className={lit("cards")}>Cards</TabsTrigger>
+            <TabsTrigger value="scrape" className={lit("scrape")}>Scrape</TabsTrigger>
+          </TabsList>
+          <span className="flex-1" />
+          <UpdateChip openScrape={() => setTab("scrape")} />
+          {data?.ynabReadAt && (
+            <span className="text-xs text-muted-foreground" title={`Numbers read from YNAB at ${new Date(data.ynabReadAt).toLocaleString("en-IL")}`}>
+              YNAB {readTime(data.ynabReadAt)}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="Refresh from YNAB"
+            title="Refresh from YNAB"
+            onClick={() => reload({ fresh: true })}
+            disabled={loading}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-60"
+          >
+            <RotateCw className={cn("h-[18px] w-[18px]", loading && "animate-spin")} />
+          </button>
+          <button
+            type="button"
+            aria-label="Settings"
+            onClick={() => navigate("settings", "main")}
+            className={cn("rounded-md p-1.5 hover:bg-muted", tab === "settings" ? "text-foreground" : "text-muted-foreground")}
+          >
+            <Settings className="h-[18px] w-[18px]" />
+          </button>
+        </div>
 
-        <TabsContent value="home">
+        <Pane value="home" visited={visited} onBack={setTab}>
           <HomePage navigate={navigate} />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="scrape">
-          <SubTabs
-            value={views.scrape}
-            onChange={setView("scrape")}
-            items={[
-              { value: "scrape", label: "Scrape", content: <ScrapePage /> },
-              { value: "history", label: "Past runs", content: <HistoryPage /> },
-            ]}
-          />
-        </TabsContent>
+        <Pane value="inbox" visited={visited} onBack={setTab}>
+          <InboxPage key={freshCount} onLeft={setInboxQueueLeft} openList={() => setTab("categorize")} />
+        </Pane>
 
-        <TabsContent value="review">
-          <SubTabs
-            value={views.review}
-            onChange={setView("review")}
-            items={[
-              { value: "categorize", label: <>Categorize <Count n={uncategorized} /></>, content: <CategorizePage /> },
-              { value: "schedules", label: <>Schedules <Count n={schedules} /></>, content: <SchedulesPanel /> },
-              { value: "unusual", label: <>Unusual <Count n={unusual} /></>, content: <AnomaliesPanel /> },
-              { value: "reconcile", label: "Reconcile", content: <ReconcilePage /> },
-            ]}
-          />
-        </TabsContent>
+        <Pane value="categorize" visited={visited} onBack={setTab}>
+          <CategorizePage />
+        </Pane>
 
-        <TabsContent value="reports">
-          <ReportsPanel />
-        </TabsContent>
+        <Pane value="cards" visited={visited} onBack={setTab}>
+          <CardsPage navigate={navigate} openGroup={views.cards} />
+        </Pane>
 
-        <TabsContent value="setup">
-          <SubTabs
-            value={views.setup}
-            onChange={setView("setup")}
-            items={[
-              { value: "accounts", label: "Bank accounts", content: <AccountsPage /> },
-              { value: "ynab", label: "YNAB import", content: <YnabPage /> },
-              { value: "spending", label: "Spending settings", content: <SpendingSettingsPanel /> },
-            ]}
-          />
-        </TabsContent>
+        <Pane value="scrape" visited={visited} onBack={setTab}>
+          <ScrapePage openInbox={() => setTab("inbox")} openHistory={() => setTab("history")} />
+        </Pane>
+
+        <Pane value="history" visited={visited} onBack={setTab}>
+          <HistoryPage />
+        </Pane>
+
+        <Pane value="settings" visited={visited} onBack={setTab}>
+          <SettingsPage view={views.settings ?? "main"} setView={setView("settings")} />
+        </Pane>
+
+        <Pane value="reports" visited={visited} onBack={setTab}>
+          <ReportsPage />
+        </Pane>
       </Tabs>
     </div>
   );

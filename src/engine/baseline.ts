@@ -9,9 +9,11 @@
  *   so the expected rest of the month never subtracts those twice.
  */
 import type { YnabTransaction } from "../ynab/categorize.js";
+import { readMemoFields } from "../ynab/categorize.js";
 
 export interface SpendItem {
   date: string;
+  transactionId?: string;
   /** Positive = money spent; a refund is negative. */
   amount: number;
   categoryId: string;
@@ -51,17 +53,18 @@ export function spendItems(transactions: YnabTransaction[]): SpendItem[] {
   const items: SpendItem[] = [];
   for (const t of transactions) {
     if (t.deleted) continue;
-    const installment = /"installment"\s*:/.test(t.memo ?? "");
+    const installment = typeof readMemoFields(t.memo)?.installment === "string";
     const parts = (t.subtransactions as SubTransaction[] | undefined)?.filter((s) => !s.deleted);
     const lines = parts?.length
       ? parts
       : [{ amount: t.amount, category_id: t.category_id, category_name: t.category_name, transfer_account_id: t.transfer_account_id, deleted: false }];
     for (const p of lines) {
-      if (p.transfer_account_id && !p.category_id) continue;
+      if (p.transfer_account_id) continue;
       if (p.category_name === READY_TO_ASSIGN) continue;
       const uncategorized = !p.category_id || p.category_name === UNCATEGORIZED;
       items.push({
         date: t.date,
+        transactionId: t.id,
         amount: -p.amount,
         categoryId: uncategorized ? UNCATEGORIZED : p.category_id!,
         categoryName: uncategorized ? UNCATEGORIZED : p.category_name ?? "",
@@ -123,7 +126,7 @@ function sumDays(items: SpendItem[], month: string, fromDay: number, toDay: numb
 const COVER_SHARE = 0.25;
 const COVER_DAYS = 5;
 
-function normalizedName(value: string | null | undefined): string {
+export function normalizedName(value: string | null | undefined): string {
   return (value ?? "")
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
@@ -132,39 +135,64 @@ function normalizedName(value: string | null | undefined): string {
     .trim();
 }
 
-function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
-  const leftName = normalizedName(a);
-  const rightName = normalizedName(b);
+export function similarPayee(a: string | null | undefined, b: string | null | undefined): boolean {
+  return similarNormalized(normalizedName(a), normalizedName(b));
+}
+
+/** `similarPayee` for names that `normalizedName` already normalized. */
+function similarNormalized(leftName: string, rightName: string): boolean {
   if (leftName && leftName === rightName) return true;
-  const tokens = (value: string | null | undefined) =>
-    new Set(normalizedName(value).split(/\s+/).filter(Boolean));
-  const left = tokens(a);
-  const right = tokens(b);
+  const tokens = (value: string) => new Set(value.split(/\s+/).filter(Boolean));
+  const left = tokens(leftName);
+  const right = tokens(rightName);
   if (!left.size || !right.size) return false;
   const overlap = [...left].filter((token) => right.has(token)).length;
   return overlap >= 2 && overlap / Math.min(left.size, right.size) >= 0.75;
 }
 
+interface PreparedSchedule {
+  accountId: string;
+  categoryId: string | null | undefined;
+  categoryName: string;
+  payee: string;
+  amount: number;
+  day: number;
+}
+
+/** Active outflow schedules with their names normalized once. */
+function prepareSchedules(schedules: ScheduleLike[]): PreparedSchedule[] {
+  return schedules
+    .filter((s) => !s.deleted && s.amount < 0)
+    .map((s) => ({
+      accountId: s.account_id,
+      categoryId: s.category_id,
+      categoryName: normalizedName(s.category_name),
+      payee: normalizedName(s.payee_name),
+      amount: -s.amount,
+      day: Number(s.date_next.slice(8, 10)),
+    }));
+}
+
 /** Match by payee, or by category when either payee is missing, then check account, amount, and day. */
-function scheduled(item: SpendItem, schedules: ScheduleLike[]): boolean {
+function scheduled(item: SpendItem, schedules: PreparedSchedule[]): boolean {
   const day = Number(item.date.slice(8, 10));
+  const itemPayee = normalizedName(item.payeeName);
+  const itemCategory = normalizedName(item.categoryName);
   return schedules.some((s) => {
-    if (s.deleted || s.amount >= 0 || s.account_id !== item.accountId) return false;
+    if (s.accountId !== item.accountId) return false;
     const sameCategory =
-      (!!s.category_id && s.category_id === item.categoryId) ||
-      (!!normalizedName(s.category_name) && normalizedName(s.category_name) === normalizedName(item.categoryName));
-    const itemPayee = normalizedName(item.payeeName);
-    const scheduledPayee = normalizedName(s.payee_name);
-    const bothHavePayees = Boolean(itemPayee && scheduledPayee);
-    if (!similarPayee(itemPayee, scheduledPayee) && (bothHavePayees || !sameCategory)) return false;
-    const amount = -s.amount;
-    const gap = Math.abs(Number(s.date_next.slice(8, 10)) - day);
-    return Math.abs(item.amount - amount) <= amount * COVER_SHARE && Math.min(gap, 31 - gap) <= COVER_DAYS;
+      (!!s.categoryId && s.categoryId === item.categoryId) || (!!s.categoryName && s.categoryName === itemCategory);
+    const bothHavePayees = Boolean(itemPayee && s.payee);
+    if (!similarNormalized(itemPayee, s.payee) && (bothHavePayees || !sameCategory)) return false;
+    const gap = Math.abs(s.day - day);
+    return Math.abs(item.amount - s.amount) <= s.amount * COVER_SHARE && Math.min(gap, 31 - gap) <= COVER_DAYS;
   });
 }
 
 export function predictItems(items: SpendItem[], schedules: ScheduleLike[]): SpendItem[] {
-  return items.filter((i) => !i.installment && !scheduled(i, schedules));
+  // ponytail: no date bound: a schedule matches by day of month, so every past item can match.
+  const prepared = prepareSchedules(schedules);
+  return items.filter((i) => !i.installment && !scheduled(i, prepared));
 }
 
 /**
@@ -216,7 +244,7 @@ function paceStatus(thisMonth: number, normalByToday: number): { difference: num
  * A category that is one payment a month (rent, a loan): pace makes no sense, so it is "paid" or
  * "due". Fixed = in most past months the total is within 10% of the median, from at most 2 payments.
  */
-function isFixed(items: SpendItem[], months: string[]): boolean {
+export function isFixed(items: SpendItem[], months: string[]): boolean {
   const normal = median(months.map((m) => sumDays(items, m, 0, 31)));
   if (normal <= 0) return false;
   const steady = months.filter((m) => {

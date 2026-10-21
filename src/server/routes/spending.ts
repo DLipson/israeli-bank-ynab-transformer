@@ -2,17 +2,27 @@ import { Router, type Request, type Response } from "express";
 import { loadAppEnv } from "../../env.js";
 import { getYnabToken } from "../../ynab/import-service.js";
 import {
+  addToCheck,
   createScheduled,
+  deleteCreatedScheduled,
   dismissAnomaly,
   getSpending,
   ignoreSuggestion,
   loadSettings,
+  recentInflows,
+  removeToCheck,
+  recentPurchases,
+  restoreAnomaly,
+  restoreSuggestion,
+  treatAsRefund,
   saveSettings,
+  setIncomeMark,
+  spendingCategoryIds,
 } from "../../engine/safe-spending-service.js";
-import type { CreditLimitGroup, Settings } from "../../engine/safe-spending.js";
+import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
 import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
 import type { ReportType } from "../../engine/reports.js";
-import { getReconcile } from "../../engine/reconcile-service.js";
+import { deleteImported, getReconcile, importMissing } from "../../engine/reconcile-service.js";
 
 const router = Router();
 
@@ -39,18 +49,28 @@ function checkGroup(g: unknown): CreditLimitGroup {
   return { name: group.name.trim(), limit: group.limit, accountIds: group.accountIds };
 }
 
-/** Only known fields with valid values are saved; ignored suggestions change through POST /ignore. */
-function checkSettings(body: unknown, current: Settings): Settings {
-  const b = body as Partial<Settings>;
+/**
+ * Only known fields with valid values are saved; ignored suggestions change through POST /ignore,
+ * and createdScheduleIds only through POST /scheduled. `categoryIds` reads YNAB only when the body
+ * names categories.
+ */
+async function checkSettings(body: unknown, current: Settings, categoryIds: () => Promise<Set<string>>): Promise<Settings> {
+  const b = body as Partial<Settings> & { periodEnd?: unknown };
   const next = { ...current };
+  if (b.periodEnd !== undefined && b.payday === undefined) {
+    const oldPeriodEnd = b.periodEnd;
+    const ok = oldPeriodEnd === "month-end" || (Number.isInteger(oldPeriodEnd) && Number(oldPeriodEnd) >= 1 && Number(oldPeriodEnd) <= 31);
+    if (!ok) throw new Error('periodEnd must be "month-end" or a day from 1 to 31.');
+    next.payday = paydayFromPeriodEnd(oldPeriodEnd as "month-end" | number);
+  }
   if (b.mode !== undefined) {
     if (b.mode !== "cashflow" && b.mode !== "ynab") throw new Error("mode must be cashflow or ynab.");
     next.mode = b.mode;
   }
-  if (b.periodEnd !== undefined) {
-    const ok = b.periodEnd === "month-end" || (Number.isInteger(b.periodEnd) && b.periodEnd >= 1 && b.periodEnd <= 31);
-    if (!ok) throw new Error('periodEnd must be "month-end" or a day from 1 to 31.');
-    next.periodEnd = b.periodEnd;
+  if (b.payday !== undefined) {
+    const ok = b.payday === "month-start" || (Number.isInteger(b.payday) && b.payday >= 1 && b.payday <= 31);
+    if (!ok) throw new Error('payday must be "month-start" or a day from 1 to 31.');
+    next.payday = b.payday;
   }
   if (b.buffer !== undefined) {
     if (!isMoney(b.buffer)) throw new Error("buffer must be 0 or more.");
@@ -66,38 +86,62 @@ function checkSettings(body: unknown, current: Settings): Settings {
     const ids = next.creditLimits.flatMap((g) => g.accountIds);
     if (new Set(ids).size !== ids.length) throw new Error("A card can be in only one credit limit group.");
   }
+  if (b.cardWarningLevel !== undefined) {
+    if (!isMoney(b.cardWarningLevel)) throw new Error("cardWarningLevel must be 0 or more.");
+    next.cardWarningLevel = b.cardWarningLevel;
+  }
+  if (b.essentialCategoryIds !== undefined || b.essentialsOverride) {
+    const known = await categoryIds();
+    const unknown = (ids: string[]) => ids.find((id) => !known.has(id));
+    if (b.essentialCategoryIds !== undefined) {
+      if (!isStringList(b.essentialCategoryIds)) throw new Error("essentialCategoryIds must be a list.");
+      const bad = unknown(b.essentialCategoryIds);
+      if (bad) throw new Error(`Unknown category: ${bad}.`);
+      next.essentialCategoryIds = [...new Set(b.essentialCategoryIds)];
+    }
+    if (b.essentialsOverride) {
+      const o = b.essentialsOverride as Partial<NonNullable<Settings["essentialsOverride"]>>;
+      if (typeof o.period !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(o.period)) {
+        throw new Error("essentialsOverride needs a period (yyyy-mm-dd).");
+      }
+      if (typeof o.amounts !== "object" || o.amounts === null || Array.isArray(o.amounts)) {
+        throw new Error("essentialsOverride needs amounts.");
+      }
+      const bad = unknown(Object.keys(o.amounts));
+      if (bad) throw new Error(`Unknown category: ${bad}.`);
+      if (!Object.values(o.amounts).every(isMoney)) throw new Error("Each essentials amount must be 0 or more.");
+      next.essentialsOverride = { period: o.period, amounts: o.amounts };
+    }
+  }
+  if (b.essentialsOverride === null) next.essentialsOverride = null;
   if (b.baselineMonths !== undefined) {
     if (!Number.isInteger(b.baselineMonths) || b.baselineMonths < 1 || b.baselineMonths > 24) {
       throw new Error("baselineMonths must be a whole number from 1 to 24.");
     }
     next.baselineMonths = b.baselineMonths;
   }
-  if (b.subtractExpected !== undefined) {
-    if (typeof b.subtractExpected !== "boolean") throw new Error("subtractExpected must be true or false.");
-    next.subtractExpected = b.subtractExpected;
-  }
-  if (b.overdraft !== undefined) {
-    const o = b.overdraft;
-    if (o !== null && (typeof o?.limitAccountId !== "string" || typeof o?.accountId !== "string")) {
-      throw new Error("overdraft must be null or { limitAccountId, accountId }.");
-    }
-    next.overdraft = o;
-  }
   return next;
 }
 
 router.get(
   "/",
-  handle(async () => {
+  handle(async (req) => {
     loadAppEnv({ override: true });
-    return getSpending(getYnabToken());
+    // quick=1: reload after a settings change; reuses the last YNAB read.
+    // fresh=1: the Refresh button; read YNAB now instead of reusing a recent read.
+    // baseline and upcoming are for the monthly report only; the GUI does not read them.
+    const { baseline, upcoming, ...rest } = await getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1", fresh: req.query.fresh === "1" });
+    return rest;
   })
 );
 
 router.put(
   "/settings",
-  handle((req) => {
-    const next = checkSettings(req.body, loadSettings());
+  handle(async (req) => {
+    const next = await checkSettings(req.body, loadSettings(), () => {
+      loadAppEnv({ override: true });
+      return spendingCategoryIds(getYnabToken());
+    });
     saveSettings(next);
     return next;
   })
@@ -115,16 +159,85 @@ router.post(
     if (typeof b.payeeName !== "string" || !b.payeeName.trim()) throw new Error("payeeName is required.");
     if (b.categoryId !== null && typeof b.categoryId !== "string") throw new Error("categoryId must be a string or null.");
     loadAppEnv({ override: true });
-    await createScheduled(getYnabToken(), {
+    const id = await createScheduled(getYnabToken(), {
       accountId: b.accountId,
       date: b.date,
       amount: b.amount,
       payeeName: b.payeeName.trim(),
       categoryId: b.categoryId,
     });
+    return { ok: true, id };
+  })
+);
+
+/** Inbox Undo: deletes a schedule in YNAB that this app created (YNAB write, user's click only). */
+router.delete(
+  "/scheduled/:id",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    await deleteCreatedScheduled(getYnabToken(), String(req.params.id));
     return { ok: true };
   })
 );
+
+/** Purchases a refund can be linked to (read-only). `today` is for tests. */
+router.get(
+  "/purchases",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { purchases: await recentPurchases(getYnabToken(), typeof req.query.today === "string" ? req.query.today : undefined) };
+  })
+);
+
+/** Money-in transactions with their marks, for Settings → Income (read-only). `today` is for tests. */
+router.get(
+  "/inflows",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { inflows: await recentInflows(getYnabToken(), typeof req.query.today === "string" ? req.query.today : undefined) };
+  })
+);
+
+/** Marks one money-in entry as income or not income, or clears the mark (null). Local only. */
+router.post(
+  "/income-marks",
+  handle((req) => {
+    const { id, mark } = req.body as { id?: unknown; mark?: unknown };
+    if (typeof id !== "string" || !id) throw new Error("id is required.");
+    if (mark !== null && mark !== "income" && mark !== "not-income") throw new Error('mark must be "income", "not-income", or null.');
+    return setIncomeMark(id, mark);
+  })
+);
+
+/** Treat as refund: YNAB write (the refund gets the purchase's category), only from the user's click. */
+router.post(
+  "/refund",
+  handle(async (req) => {
+    const { refundTxId, purchaseTxId } = req.body as { refundTxId?: unknown; purchaseTxId?: unknown };
+    if (typeof refundTxId !== "string" || typeof purchaseTxId !== "string") throw new Error("refundTxId and purchaseTxId are required.");
+    loadAppEnv({ override: true });
+    await treatAsRefund(getYnabToken(), refundTxId, purchaseTxId);
+    return { ok: true };
+  })
+);
+
+/** "Check it": the client sends the item as shown, so it can stay on the list after it ages out. */
+router.post(
+  "/anomalies/:id/check",
+  handle((req) => {
+    const b = req.body as { title?: unknown; detail?: unknown; date?: unknown; amount?: unknown };
+    if (typeof b.title !== "string" || typeof b.detail !== "string" || typeof b.date !== "string" || typeof b.amount !== "number") {
+      throw new Error("title, detail, date, and amount are required.");
+    }
+    return addToCheck({ id: String(req.params.id), title: b.title, detail: b.detail, date: b.date, amount: b.amount });
+  })
+);
+
+router.post("/anomalies/:id/uncheck", handle((req) => removeToCheck(String(req.params.id))));
+
+router.post("/anomalies/:id/restore", handle((req) => restoreAnomaly(String(req.params.id))));
+
+router.post("/suggestions/:id/restore", handle((req) => restoreSuggestion(String(req.params.id))));
 
 router.post(
   "/ignore",
@@ -141,6 +254,25 @@ router.post(
     const { id } = req.body as { id?: unknown };
     if (typeof id !== "string" || !id) throw new Error("id is required.");
     return dismissAnomaly(id);
+  })
+);
+
+/** YNAB write: imports one bank row that YNAB does not have. Only from the user's Import click. */
+router.post(
+  "/missing/:id/import",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    return { transactionId: await importMissing(getYnabToken(), String(req.params.id), loadSettings().dismissedAnomalies) };
+  })
+);
+
+/** YNAB write: Undo of Import. Deletes only a transaction this server imported. */
+router.delete(
+  "/missing/imported/:transactionId",
+  handle(async (req) => {
+    loadAppEnv({ override: true });
+    await deleteImported(getYnabToken(), String(req.params.transactionId));
+    return { ok: true };
   })
 );
 

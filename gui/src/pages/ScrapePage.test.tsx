@@ -2,16 +2,33 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ScrapePage } from "@/pages/ScrapePage";
 import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
-import { createScrapeStream } from "@/api/client";
+import { createScrapeStream, type SSEEvent } from "@/api/client";
 
 vi.mock("@/api/client", async () => {
   const actual = await vi.importActual<typeof import("@/api/client")>("@/api/client");
   return {
     ...actual,
     createScrapeStream: vi.fn(),
+    getRuns: vi.fn().mockResolvedValue([
+      {
+        id: "r1",
+        createdAt: "2026-10-15T10:00:00.000Z",
+        settings: { daysBack: 7, accounts: ["Account A", "Account C"] },
+        accounts: [
+          { accountName: "Account A", success: true, transactionCount: 14 },
+          { accountName: "Account C", success: false, transactionCount: 0, error: "Login page did not load" },
+        ],
+        exports: [],
+        ynabImports: [],
+        rowCount: 14,
+        totalOutflow: 0,
+        totalInflow: 0,
+      },
+    ]),
     getAccounts: vi.fn().mockResolvedValue([
       { name: "Account A", bankName: "Leumi", companyId: "leumi", fields: [], enabled: true, primary: true },
       { name: "Account B", bankName: "Hapoalim", companyId: "hapoalim", fields: [], enabled: false, primary: true },
+      { name: "Account C", bankName: "Max", companyId: "max", fields: [], enabled: true, primary: true },
     ]),
   };
 });
@@ -26,131 +43,96 @@ function renderPage() {
   );
 }
 
-describe("ScrapePage settings persistence", () => {
+describe("Scrape tab", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(createScrapeStream).mockReset();
   });
 
-  it("hydrates settings from localStorage on first render", async () => {
+  it("lists accounts first, with their type, last update, and last failure", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText(/Account A/)).toBeChecked());
+    expect(screen.queryByLabelText(/Account B/)).not.toBeInTheDocument();
+    expect(screen.getByText("Card")).toBeInTheDocument();
+    expect(await screen.findByText(/Last try failed: Login page did not load/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update 2 accounts" })).toBeInTheDocument();
+  });
+
+  it("keeps every old option under Options, hydrated from localStorage", async () => {
     localStorage.setItem(
       SETTINGS_KEY,
-      JSON.stringify({
-        daysBack: 15,
-        outputDir: "/tmp/out",
-        split: true,
-        showBrowser: true,
-        enableDetailedLogging: true,
-        detailedLoggingLimit: 3,
-        selectedAccounts: ["Account A"],
-      })
+      JSON.stringify({ split: true, showBrowser: true, autoYnabImport: true, enableDetailedLogging: true, detailedLoggingLimit: 3, concurrency: 2, selectedAccounts: ["Account A"] })
     );
-
     renderPage();
-
-    expect((screen.getByLabelText("Days Back") as HTMLInputElement).value).toBe("15");
-    expect((screen.getByLabelText("Output Directory") as HTMLInputElement).value).toMatch(
-      /^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/
-    );
-    expect(screen.getByLabelText("Split by account")).toHaveAttribute("data-state", "checked");
-    expect(screen.getByLabelText("Show browser")).toHaveAttribute("data-state", "checked");
-    expect(screen.getByLabelText("Enable detailed logging")).toHaveAttribute(
-      "data-state",
-      "checked"
-    );
-    expect(
-      (screen.getByLabelText("Log item limit (0 = all items)") as HTMLInputElement).value
-    ).toBe("3");
-
-    const accountCheckbox = await screen.findByLabelText("Account A");
-    expect(accountCheckbox).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
+    expect(screen.getByLabelText("Send to YNAB after scrape")).toHaveAttribute("data-state", "checked");
+    expect(screen.getByLabelText("Show browser window")).toHaveAttribute("data-state", "checked");
+    expect(screen.getByLabelText("Split CSV by account")).toHaveAttribute("data-state", "checked");
+    expect(screen.getByLabelText("Detailed logging")).toHaveAttribute("data-state", "checked");
+    expect((screen.getByLabelText("Log item limit (0 = all items)") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Accounts at the same time") as HTMLInputElement).value).toBe("2");
+    expect((screen.getByLabelText("Output folder") as HTMLInputElement).value).toMatch(/^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
+    expect(await screen.findByRole("button", { name: "Update 1 account" })).toBeInTheDocument();
   });
 
-  it("persists changes back to localStorage", async () => {
+  it("persists option changes back to localStorage", async () => {
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
+    fireEvent.click(screen.getByLabelText("Split CSV by account"));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}").split).toBe(true));
+  });
 
-    fireEvent.change(screen.getByLabelText("Days Back"), {
-      target: { value: "21" },
+  it("starts from the last successful update − 3 days, and Retry runs only the failed account", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-10-20T12:00:00"));
+    let send: (e: SSEEvent) => void = () => {};
+    vi.mocked(createScrapeStream).mockImplementation((...args) => {
+      send = args[7];
+      return { close: vi.fn() } as unknown as EventSource;
     });
-
-    await waitFor(() => {
-      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
-      expect(stored.daysBack).toBe(21);
-    });
-  });
-
-  it("shows last scrape date on the settings view", async () => {
-    localStorage.setItem(
-      "scrape.lastRun.v1",
-      JSON.stringify("2026-04-08T12:00:00.000Z")
-    );
-
-    renderPage();
-
-    expect(await screen.findByText("Last scraped: 2026-04-08")).toBeInTheDocument();
-  });
-
-  it("defaults outputDir to ./output/ with a timestamp when no localStorage is set", async () => {
-    renderPage();
-
-    const outputDirInput = (await screen.findByLabelText("Output Directory")) as HTMLInputElement;
-    expect(outputDirInput.value).toMatch(/^\.\/output\/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
-  });
-
-  it("shows the Scrape Again button in the results view", async () => {
-    localStorage.setItem(
-      "scrape.payload.v1",
-      JSON.stringify({
-        scrapeResults: [],
-        kept: [],
-        skipped: [],
-        rows: [],
-        summary: { byAccount: {}, totalOutflow: 0, totalInflow: 0 },
-      })
-    );
-
-    renderPage();
-
-    const fixedButton = screen.getByTestId("sc-again-fixed");
-    expect(fixedButton).toBeInTheDocument();
-    expect(fixedButton).not.toHaveClass("fixed");
-  });
-
-  it("defaults days back to one day before the last scrape date on reset", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-09T12:00:00.000Z"));
-
     try {
-      localStorage.setItem(
-        "scrape.payload.v1",
-        JSON.stringify({
-          scrapeResults: [],
-          kept: [],
-          skipped: [],
-          rows: [],
-          summary: { byAccount: {}, totalOutflow: 0, totalInflow: 0 },
-          auditLog: { timestamp: "2026-04-08T08:00:00.000Z" },
-        })
-      );
-
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ selectedAccounts: ["Account A"] }));
       renderPage();
+      expect(await screen.findByText(/From 12 Oct/)).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole("button", { name: "Update 1 account" }));
+      expect(vi.mocked(createScrapeStream).mock.calls[0][0]).toBe(8); // 12 Oct to 20 Oct
+      expect(vi.mocked(createScrapeStream).mock.calls[0][5]).toEqual(["Account A"]);
 
-      fireEvent.click(screen.getByTestId("sc-again-fixed").querySelector("button")!);
+      // Live steps come from the server's progress messages (which start with a newline).
+      send({ type: "progress", message: "\nScraping Account A...", account: "Account A" });
+      send({ type: "progress", message: "  [Account A] LOGGING_IN", account: "Account A" });
+      expect(await screen.findByText("Logging in")).toBeInTheDocument();
 
-      expect((screen.getByLabelText("Days Back") as HTMLInputElement).value).toBe(
-        "2"
-      );
+      send({ type: "account-done", accountName: "Account A", success: false, error: "Login page did not load" });
+      send({ type: "done", payload: { rows: [], skipped: [], summary: { byAccount: {}, totalOutflow: 0, totalInflow: 0 }, auditLog: {} } });
+      expect(await screen.findByText("Account A failed. Retry it above.")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(vi.mocked(createScrapeStream).mock.calls[1][5]).toEqual(["Account A"]);
     } finally {
       vi.useRealTimers();
     }
   });
+
+  it("shows one summary line and the next actions after a run", async () => {
+    localStorage.setItem(
+      "scrape.payload.v1",
+      JSON.stringify({ skipped: [], rows: [{ date: "2026-10-18", payee: "Shop", memo: "", outflow: "10", inflow: "" }], summary: { byAccount: {}, totalOutflow: 10, totalInflow: 0 } })
+    );
+    render(
+      <ScrapeRunProvider>
+        <ScrapePage openInbox={() => {}} />
+      </ScrapeRunProvider>
+    );
+    expect(screen.getByText("1 new transaction")).toBeInTheDocument();
+    for (const name of ["Categorize in Inbox", "Send to YNAB", "See transactions", "Log and CSV"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(await screen.findByText("14 new")).toBeInTheDocument(); // past updates
+  });
 });
 
 function Harness({ show }: { show: boolean }) {
-  return (
-    <ScrapeRunProvider>
-      {show ? <ScrapePage /> : null}
-    </ScrapeRunProvider>
-  );
+  return <ScrapeRunProvider>{show ? <ScrapePage /> : null}</ScrapeRunProvider>;
 }
 
 describe("Scrape run survives leaving the view", () => {
@@ -164,21 +146,14 @@ describe("Scrape run survives leaving the view", () => {
 
     const { rerender } = render(<Harness show />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /start scrap/i })).not.toBeDisabled()
-    );
-    fireEvent.click(screen.getByRole("button", { name: /start scrap/i }));
-
-    expect(await screen.findByText("Account A")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /cancel scrap/i })).toBeInTheDocument();
+    const update = await screen.findByRole("button", { name: /Update 2 accounts/ });
+    fireEvent.click(update);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
 
     rerender(<Harness show={false} />);
-
     expect(fakeStream.close).not.toHaveBeenCalled();
 
     rerender(<Harness show />);
-
-    expect(screen.getByRole("button", { name: /cancel scrap/i })).toBeInTheDocument();
-    expect(screen.getByText("Account A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 });
