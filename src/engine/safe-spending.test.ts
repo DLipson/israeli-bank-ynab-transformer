@@ -193,6 +193,15 @@ describe("installments, credit exposure, and obligations", () => {
     expect(plans[0]).toMatchObject({ paid: 2, total: 10, remaining: 8 * 135 * K });
   });
 
+  it("counts only the principal left of a credit deal with interest, as the bank does", () => {
+    // Real Cal charge: ₪2,138.45 in 12 payments of ₪191.50; the bank counted ₪135.49 less than 11 × 191.50.
+    const credit = txn({ amount: -191.5 * K, memo: JSON.stringify({ installment: "1/12", chargeDate: "2026-11-02", originalAmount: -2138.45 }) });
+    const [p] = installmentPlans([credit, plan(2, "2026-11-02")], "2026-10-20").filter((x) => x.total === 12);
+    expect(p.remaining).toBe(2106.5 * K);
+    expect(Math.abs(p.principalLeft - 1971 * K)).toBeLessThan(K);
+    expect(installmentPlans([plan(2, "2026-11-02")], "2026-10-20")[0].principalLeft).toBe(8 * 135 * K);
+  });
+
   it("parses an old-format charge date in an installment memo", () => {
     const plans = installmentPlans(
       [txn({ memo: "{ installment: '2/10', chargeDate: '10/06/2025' }" })],

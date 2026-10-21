@@ -26,7 +26,7 @@ const endsSoon = (n: number) => (n <= 2 ? <Muted>· ends soon</Muted> : null);
 
 function Group({ g, open }: { g: CardGroup; open: ReturnType<typeof useOpen> }) {
   const key = `g:${g.name}`;
-  const used = g.balance + g.futureInstallments;
+  const used = g.balance + g.futureInstallments - g.futureInterest;
   const Chevron = open.is(key) ? ChevronDown : ChevronRight;
   return (
     <div className="border-t py-2">
@@ -43,6 +43,11 @@ function Group({ g, open }: { g: CardGroup; open: ReturnType<typeof useOpen> }) 
         {g.limit !== null && (
           <span className="mt-1.5 block h-1.5 rounded-md bg-muted">
             <span className={cn("block h-1.5 rounded-md", STATE_BAR[g.state])} style={{ width: `${Math.min(100, (used / Math.max(g.limit, 1)) * 100)}%` }} />
+          </span>
+        )}
+        {g.limit !== null && g.unexplained !== 0 && (
+          <span className="mt-1 block text-xs text-amber-700 dark:text-amber-400">
+            The YNAB balance and the charges differ by {shekels(Math.abs(g.unexplained))}. Older card payments or charges in YNAB do not match the bank.
           </span>
         )}
       </button>
@@ -79,6 +84,7 @@ function Group({ g, open }: { g: CardGroup; open: ReturnType<typeof useOpen> }) 
               </Expand>
             ))}
             {g.futureByMonth.length === 0 && <p className="border-t py-1.5 text-sm text-muted-foreground">No future installments.</p>}
+            {g.futureInterest > 0 && <Line text="Of this, interest (the limit does not count it)" amount={g.futureInterest} />}
           </Expand>
         </div>
       )}

@@ -112,6 +112,26 @@ describe("cardGroups", () => {
     const group = cardGroups(s).find((g) => g.name === "Isracard")!;
     expect(group.nextPayment.newPurchases.amount).toBe(500 * K);
     expect(group.nextPayment.newPurchases.items).toContainEqual(expect.objectContaining({ payee: "Earlier balance and adjustments", amount: -70 * K }));
+    expect(group.unexplained).toBe(-70 * K);
+    expect(cardGroups(snapshot()).find((g) => g.name === "Isracard")!.unexplained).toBe(0);
+  });
+
+  it("treats a reconcile adjustment as old data, not as a charge", () => {
+    const s = snapshot();
+    s.accounts[0] = account("isracard", -550);
+    s.transactions.push(txn("isracard", "2026-10-16", -20, "Entered automatically by YNAB", { payee_name: "Reconciliation Balance Adjustment" }));
+    const group = cardGroups(s).find((g) => g.name === "Isracard")!;
+    expect(group.nextPayment.newPurchases.items.some((i) => i.payee === "Reconciliation Balance Adjustment")).toBe(false);
+    expect(group.unexplained).toBe(-20 * K);
+  });
+
+  it("leaves credit-deal interest out of the headroom", () => {
+    const s = snapshot();
+    s.transactions.push(txn("cal", "2026-10-03", -191.5, { installment: "1/12", chargeDate: "2026-11-02", originalAmount: -2138.45 }));
+    const group = cardGroups(s).find((g) => g.name === "Cal")!;
+    expect(group.futureInstallments).toBe(600 * K + 2106.5 * K);
+    expect(Math.abs(group.futureInterest - 135.5 * K)).toBeLessThan(K);
+    expect(group.headroom).toBe(2000 * K - group.balance - group.futureInstallments + group.futureInterest);
   });
 });
 

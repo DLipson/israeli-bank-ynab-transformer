@@ -13,6 +13,10 @@ export interface CardGroup {
   limit: number | null;
   balance: number;
   futureInstallments: number;
+  /** Interest inside `futureInstallments` (credit deals). The bank does not count it against the limit. */
+  futureInterest: number;
+  /** Balance that the listed charges do not explain: old YNAB data that does not match the bank. */
+  unexplained: number;
   headroom: number | null;
   state: "ok" | "low" | "over" | "no-limit";
   nextPayment: {
@@ -31,6 +35,8 @@ export interface CardGroup {
 const OWED_TYPES = new Set(["creditCard", "lineOfCredit"]);
 /** With no card payment in the data, charges from the last 45 days are taken as the balance. */
 const NO_PAYMENT_DAYS = 45;
+/** The payee YNAB gives the transaction it adds when you reconcile. */
+const RECONCILE = "Reconciliation Balance Adjustment";
 
 function ref(t: YnabTransaction): TxRef {
   return { id: t.id, date: t.date, payee: t.payee_name ?? "", account: t.account_name, category: t.category_name, amount: t.amount };
@@ -48,7 +54,8 @@ function monthAfter(month: string, n: number): string {
 
 /**
  * The charges still in a card's balance: not a transfer, and charged (memo chargeDate, or the date
- * when there is none) after the newest payment into the card.
+ * when there is none) after the newest payment into the card. A reconcile adjustment is not a
+ * charge: it corrects old data, so it goes into "Earlier balance and adjustments".
  */
 function unpaid(transactions: YnabTransaction[], accountId: string, today: string): YnabTransaction[] {
   const own = transactions.filter((t) => !t.deleted && t.account_id === accountId);
@@ -57,7 +64,7 @@ function unpaid(transactions: YnabTransaction[], accountId: string, today: strin
     .reduce<string | null>((max, t) => (max === null || t.date > max ? t.date : max), null);
   const after = lastPayment ?? addDays(today, -NO_PAYMENT_DAYS);
   return own
-    .filter((t) => !t.transfer_account_id && t.amount !== 0 && (parseChargeDate(t.memo) ?? t.date) > after)
+    .filter((t) => !t.transfer_account_id && t.amount !== 0 && t.payee_name !== RECONCILE && (parseChargeDate(t.memo) ?? t.date) > after)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
@@ -101,6 +108,7 @@ export function cardGroups(snapshot: Snapshot): CardGroup[] {
 
     const groupPlans = plans.filter((p) => g.accountIds.includes(p.accountId));
     const futureInstallments = groupPlans.reduce((sum, p) => sum + p.remaining, 0);
+    const futureInterest = futureInstallments - groupPlans.reduce((sum, p) => sum + p.principalLeft, 0);
     const months = new Map<string, CardGroup["futureByMonth"][number]>();
     for (const p of groupPlans) {
       const left = p.total - p.paid;
@@ -113,7 +121,7 @@ export function cardGroups(snapshot: Snapshot): CardGroup[] {
       }
     }
 
-    const headroom = g.limit === null ? null : g.limit - balance - futureInstallments;
+    const headroom = g.limit === null ? null : g.limit - balance - futureInstallments + futureInterest;
     const state: CardGroup["state"] =
       headroom === null ? "no-limit" : headroom < 0 ? "over" : headroom < settings.cardWarningLevel ? "low" : "ok";
     return {
@@ -121,6 +129,8 @@ export function cardGroups(snapshot: Snapshot): CardGroup[] {
       limit: g.limit,
       balance,
       futureInstallments,
+      futureInterest,
+      unexplained: -rest || 0,
       headroom,
       state,
       nextPayment: {

@@ -418,6 +418,29 @@ export interface InstallmentPlan {
   /** Charge date of the latest imported payment. */
   lastCharge: string;
   remaining: number;
+  /**
+   * What the payments left still owe against the credit limit. Equals `remaining`, except on a
+   * credit deal (קרדיט) with interest: the bank counts only the principal still owed there.
+   */
+  principalLeft: number;
+}
+
+/** Principal still owed after `paid` payments, when the payments carry interest; else `remaining`. */
+function principalAfter(original: number, payment: number, paid: number, total: number): number {
+  const remaining = (total - paid) * payment;
+  // ponytail: under ₪1 per payment is rounding of the first payment, not interest.
+  if (!original || payment * total - original <= total * 1000) return remaining;
+  // Monthly rate where the payments repay `original` (bisection), then the balance after `paid` payments.
+  let lo = 0;
+  let hi = 0.1;
+  for (let i = 0; i < 60; i++) {
+    const r = (lo + hi) / 2;
+    if ((payment * (1 - (1 + r) ** -total)) / r > original) lo = r;
+    else hi = r;
+  }
+  let balance = original;
+  for (let i = 0; i < paid; i++) balance = balance * (1 + lo) - payment;
+  return Math.min(remaining, Math.max(0, Math.round(balance)));
 }
 
 /**
@@ -442,7 +465,17 @@ export function installmentPlans(transactions: YnabTransaction[], today: string)
     const current = plans.get(key);
     if (current && current.paid >= paid) continue;
     const payment = Math.abs(t.amount);
-    plans.set(key, { accountId: t.account_id, payee: t.payee_name ?? "", paid, total, payment, lastCharge, remaining: (total - paid) * payment });
+    const original = Math.round(Math.abs(Number(memo.originalAmount) || 0) * 1000);
+    plans.set(key, {
+      accountId: t.account_id,
+      payee: t.payee_name ?? "",
+      paid,
+      total,
+      payment,
+      lastCharge,
+      remaining: (total - paid) * payment,
+      principalLeft: principalAfter(original, payment, paid, total),
+    });
   }
   return [...plans.values()].filter((p) => p.paid < p.total && p.lastCharge >= cutoff);
 }
@@ -606,7 +639,7 @@ export function creditExposure(snapshot: Snapshot): ExposureGroup[] {
       const a = byId.get(id);
       if (!a) continue;
       if (a.balance < 0) lines.push({ label: `${a.name} balance`, amount: -a.balance });
-      const future = plans.filter((p) => p.accountId === id).reduce((s, p) => s + p.remaining, 0);
+      const future = plans.filter((p) => p.accountId === id).reduce((s, p) => s + p.principalLeft, 0);
       if (future) lines.push({ label: `${a.name} future installments`, amount: future });
     }
     const used = lines.reduce((s, l) => s + l.amount, 0);

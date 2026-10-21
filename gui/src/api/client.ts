@@ -399,6 +399,8 @@ export interface CardGroup {
   limit: number | null;
   balance: number;
   futureInstallments: number;
+  futureInterest: number;
+  unexplained: number;
   headroom: number | null;
   state: "ok" | "low" | "over" | "no-limit";
   nextPayment: {
