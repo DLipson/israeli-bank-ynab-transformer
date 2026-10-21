@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CircleCheck, Loader2, Undo2 } from "lucide-react";
+import { Check, CircleCheck, Info, Loader2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   acceptCategory,
@@ -42,6 +42,10 @@ interface Card {
   payee: string;
   amount: number;
   detail: string;
+  /** Categorize cards: the suggested category name, or null when there is no suggestion. */
+  badge?: string | null;
+  /** Categorize cards: why the category is suggested (or the bank text when there is none). */
+  why?: string;
   buttons: [string, string];
 }
 
@@ -65,10 +69,12 @@ function describe(q: InboxItem): Card {
     const i = q.item;
     const top = i.suggestions[0];
     return {
-      title: top ? `Suggested: ${top.categoryName}` : "No suggestion",
+      title: "",
       payee: i.merchant || i.payee || "(no payee)",
       amount: i.amount,
-      detail: top?.note ?? (i.handNote || i.bankText),
+      detail: "",
+      badge: top ? top.categoryName : null,
+      why: top?.note ?? (i.handNote || i.bankText),
       buttons: top ? ["Accept", "Choose another"] : ["Choose a category", "Skip"],
     };
   }
@@ -254,15 +260,40 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
       </div>
       <div className="rounded-xl border bg-card px-5 py-6">
         <p className="text-[13px] text-muted-foreground">
-          <span className="font-medium">{KIND_NAME[q.kind]}</span> · {card.title}
+          <span className="font-medium">{KIND_NAME[q.kind]}</span>
+          {card.title && ` · ${card.title}`}
         </p>
         <p className="mb-0.5 mt-1.5 text-[22px] font-medium" dir="auto">
           {card.payee}
         </p>
         <p className="mb-1.5 text-[22px]">{shekels(Math.abs(card.amount))}</p>
-        <p className="text-[13px] text-muted-foreground" dir="auto">
-          {card.detail}
-        </p>
+        {card.detail && (
+          <p className="text-[13px] text-muted-foreground" dir="auto">
+            {card.detail}
+          </p>
+        )}
+        {card.badge !== undefined && (
+          <div className="mt-1">
+            {card.badge ? (
+              <span
+                className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                dir="auto"
+              >
+                {card.badge}
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full border px-3 py-1 text-sm text-muted-foreground">No suggestion</span>
+            )}
+            {card.why && (
+              <div className="mt-2 flex gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm text-foreground">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-700 dark:text-sky-400" aria-hidden="true" />
+                <span dir="auto">
+                  <span className="font-medium">{card.badge ? "Why:" : "Bank text:"}</span> {card.why}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         <div className="mt-4 flex gap-2">
           <Button variant="outline" className="flex-1" disabled={busy} onClick={first}>

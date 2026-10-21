@@ -31,9 +31,11 @@ function Shell() {
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
   const unusual = data?.anomalies.length ?? 0;
+  const missing = data?.missing.length ?? 0;
   // While the Inbox is open its own queue gives the count; otherwise the counts from the numbers.
+  // Keep this sum in step with buildQueue (gui/src/lib/inbox.ts): one term per kind of card.
   const [inboxQueueLeft, setInboxQueueLeft] = useState<number | null>(null);
-  const inboxLeft = inboxQueueLeft ?? schedules + uncategorized + unusual;
+  const inboxLeft = inboxQueueLeft ?? schedules + uncategorized + unusual + missing;
 
   return (
     <div className="mx-auto max-w-[680px] px-4 py-6">
