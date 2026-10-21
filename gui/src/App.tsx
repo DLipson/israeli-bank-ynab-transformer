@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { RotateCw, Settings } from "lucide-react";
+import { ChevronLeft, RotateCw, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrapePage } from "@/pages/ScrapePage";
 import { HistoryPage } from "@/pages/HistoryPage";
@@ -13,6 +13,7 @@ import { ReportsPage } from "@/pages/ReportsPage";
 import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
 import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
+import { link } from "@/lib/rows";
 import { cn } from "@/lib/utils";
 
 /** "14:32" today, else "20 Oct 14:32". */
@@ -22,10 +23,23 @@ function readTime(iso: string): string {
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString("en-IL", { day: "numeric", month: "short" })} ${time}`;
 }
 
-function Pane({ value, visited, children }: { value: string; visited: Set<string>; children: ReactNode }) {
+/** Pages with no tab of their own: they open from a tab, show a way back to it, and keep it lit. */
+const PARENT: Record<string, { tab: string; label: string }> = {
+  reports: { tab: "home", label: "Home" },
+  categorize: { tab: "inbox", label: "Inbox" },
+  history: { tab: "scrape", label: "Scrape" },
+};
+
+function Pane({ value, visited, onBack, children }: { value: string; visited: Set<string>; onBack: (tab: string) => void; children: ReactNode }) {
   if (!visited.has(value)) return null;
+  const parent = PARENT[value];
   return (
     <TabsContent value={value} forceMount className="data-[state=inactive]:hidden">
+      {parent && (
+        <button type="button" className={cn(link, "mb-3 flex items-center gap-1")} onClick={() => onBack(parent.tab)}>
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" /> {parent.label}
+        </button>
+      )}
       {children}
     </TabsContent>
   );
@@ -47,6 +61,8 @@ function Shell() {
     if (v) setView(target)(v);
     setTab(target);
   };
+  // A page without a tab keeps the tab it opened from lit.
+  const lit = (t: string) => (PARENT[tab]?.tab === t ? "bg-background text-foreground shadow" : undefined);
   const schedules = data?.suggestions.length ?? 0;
   const uncategorized = data?.uncategorizedCount ?? 0;
   const unusual = data?.anomalies.length ?? 0;
@@ -61,10 +77,10 @@ function Shell() {
       <Tabs value={tab} onValueChange={setTab}>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <TabsList>
-            <TabsTrigger value="home">Home</TabsTrigger>
-            <TabsTrigger value="inbox">Inbox{inboxLeft > 0 && ` · ${inboxLeft}`}</TabsTrigger>
-            <TabsTrigger value="cards">Cards</TabsTrigger>
-            <TabsTrigger value="scrape">Scrape</TabsTrigger>
+            <TabsTrigger value="home" className={lit("home")}>Home</TabsTrigger>
+            <TabsTrigger value="inbox" className={lit("inbox")}>Inbox{inboxLeft > 0 && ` · ${inboxLeft}`}</TabsTrigger>
+            <TabsTrigger value="cards" className={lit("cards")}>Cards</TabsTrigger>
+            <TabsTrigger value="scrape" className={lit("scrape")}>Scrape</TabsTrigger>
           </TabsList>
           <span className="flex-1" />
           <UpdateChip openScrape={() => setTab("scrape")} />
@@ -93,35 +109,35 @@ function Shell() {
           </button>
         </div>
 
-        <Pane value="home" visited={visited}>
+        <Pane value="home" visited={visited} onBack={setTab}>
           <HomePage navigate={navigate} />
         </Pane>
 
-        <Pane value="inbox" visited={visited}>
+        <Pane value="inbox" visited={visited} onBack={setTab}>
           <InboxPage key={freshCount} onLeft={setInboxQueueLeft} openList={() => setTab("categorize")} />
         </Pane>
 
-        <Pane value="categorize" visited={visited}>
+        <Pane value="categorize" visited={visited} onBack={setTab}>
           <CategorizePage />
         </Pane>
 
-        <Pane value="cards" visited={visited}>
+        <Pane value="cards" visited={visited} onBack={setTab}>
           <CardsPage navigate={navigate} openGroup={views.cards} />
         </Pane>
 
-        <Pane value="scrape" visited={visited}>
+        <Pane value="scrape" visited={visited} onBack={setTab}>
           <ScrapePage openInbox={() => setTab("inbox")} openHistory={() => setTab("history")} />
         </Pane>
 
-        <Pane value="history" visited={visited}>
+        <Pane value="history" visited={visited} onBack={setTab}>
           <HistoryPage />
         </Pane>
 
-        <Pane value="settings" visited={visited}>
+        <Pane value="settings" visited={visited} onBack={setTab}>
           <SettingsPage view={views.settings ?? "main"} setView={setView("settings")} />
         </Pane>
 
-        <Pane value="reports" visited={visited}>
+        <Pane value="reports" visited={visited} onBack={setTab}>
           <ReportsPage />
         </Pane>
       </Tabs>

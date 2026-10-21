@@ -40,6 +40,8 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
   const grey = (Math.min(s.spent, s.income) / max) * 100;
   const red = (Math.max(0, s.spent - s.income) / max) * 100;
   const days = s.daysLeft === 1 ? "1 day left" : `${s.daysLeft} days left`;
+  const shown = open.is("bar");
+  const toggleText = shown ? "Hide income and spending" : "Show income and spending";
 
   return (
     <div className={card}>
@@ -49,7 +51,8 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
       </p>
       <button
         type="button"
-        aria-label="See income and spending"
+        aria-label={toggleText}
+        aria-expanded={shown}
         onClick={() => open.toggle("bar")}
         className="mb-1.5 mt-2.5 flex h-3.5 w-full overflow-hidden rounded-md bg-muted"
       >
@@ -60,7 +63,11 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
         {shekels(Math.abs(s.difference))} {over ? "more" : "less"} than you earned · {days}
       </p>
 
-      {open.is("bar") ? (
+      <button type="button" className="mt-2 text-[13px] text-sky-700 hover:underline dark:text-sky-400" aria-expanded={shown} onClick={() => open.toggle("bar")}>
+        {toggleText}
+      </button>
+
+      {shown && (
         <div className="mt-3">
           <p className={cn(label, "mb-1")}>Income counted</p>
           {s.incomeParts.map((part) => (
@@ -200,10 +207,6 @@ function SpentVsIncomeCard({ data, navigate, open }: { data: SpendingData; navig
             ))}
           </Expand>
         </div>
-      ) : (
-        <button type="button" className="mt-2 text-[13px] text-sky-700 hover:underline dark:text-sky-400" onClick={() => open.toggle("bar")}>
-          See income and spending
-        </button>
       )}
       <div className="mt-2">
         <button type="button" className="text-[13px] text-sky-700 hover:underline dark:text-sky-400" onClick={() => navigate("reports")}>
