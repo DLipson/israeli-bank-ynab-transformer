@@ -37,7 +37,7 @@ export function UpdateChip({ openScrape }: { openScrape: () => void }) {
       running.current = true;
     } else if (running.current && run.phase === "results" && !run.ynabImporting) {
       running.current = false;
-      reload();
+      reload({ fresh: true }); // the scrape (and its import) changed the data
     }
   }, [run.phase, run.ynabImporting, reload]);
 

@@ -114,15 +114,23 @@ export function getYnabToken(): string {
   return token;
 }
 
+/** Writes sent to YNAB by this server; a read remembered before a write is not reused. */
+let writes = 0;
+export const ynabWrites = (): number => writes;
+
 export async function ynabRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${YNAB_API}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
+  if (init.method && init.method !== "GET") writes++;
   const body = (await response.json().catch(() => ({}))) as {
     data?: T;
     error?: { detail?: string };
   };
+  if (response.status === 429) {
+    throw new Error("YNAB says too many requests (it allows 200 an hour). Wait a few minutes, then refresh.");
+  }
   if (!response.ok || !body.data) {
     throw new Error(`YNAB request failed (${response.status}): ${body.error?.detail ?? response.statusText}`);
   }

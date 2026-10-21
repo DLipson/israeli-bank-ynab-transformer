@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { listRuns, type RunSummary } from "../history.js";
 import { ensureAppConfigDirExists, getAppConfigDir } from "../env.js";
-import { loadYnabImportConfig, ynabRequest } from "../ynab/import-service.js";
+import { loadYnabImportConfig, ynabRequest, ynabWrites } from "../ynab/import-service.js";
 import { getAllTransactions } from "../ynab/transaction-cache.js";
 import {
   creditExposure,
@@ -70,23 +70,30 @@ export function lastSuccessfulScrapeAt(runs: Pick<RunSummary, "createdAt" | "acc
 
 type YnabData = [{ accounts: Account[] }, { month: Month }, { scheduled_transactions: ScheduledTransaction[] }, Awaited<ReturnType<typeof getAllTransactions>>];
 
-/** The last YNAB read, so a reload after a settings change does not wait for YNAB again. */
-let lastYnab: { budget: string; at: number; data: YnabData } | null = null;
+/** The last YNAB read. Reused for a minute (10 minutes after a settings change) unless this server wrote to YNAB since. */
+let lastYnab: { budget: string; at: number; writes: number; data: YnabData } | null = null;
+const SHARE_MS = 60_000;
 const QUICK_MAX_AGE_MS = 10 * 60_000;
 
-/** `quick`: reuse the last YNAB read (up to 10 minutes old); only the settings changed. */
-export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10), options: { quick?: boolean } = {}) {
+/**
+ * `quick`: only the settings changed. `fresh`: the user asked to refresh, so read YNAB now.
+ * Otherwise a read from the last minute is reused, so tabs and reloads do not each call YNAB.
+ */
+export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10), options: { quick?: boolean; fresh?: boolean } = {}) {
   const budget = budgetPath();
-  const reuse = options.quick && lastYnab?.budget === budget && Date.now() - lastYnab.at < QUICK_MAX_AGE_MS;
+  const age = lastYnab ? Date.now() - lastYnab.at : Infinity;
+  const reuse =
+    !options.fresh && lastYnab?.budget === budget && lastYnab.writes === ynabWrites() && age < (options.quick ? QUICK_MAX_AGE_MS : SHARE_MS);
   const data: YnabData = reuse
     ? lastYnab!.data
     : await Promise.all([
         ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`),
         ynabRequest<{ month: Month }>(token, `${budget}/months/current`),
         ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`),
-        getAllTransactions(token, loadYnabImportConfig().budgetId),
+        getAllTransactions(token, loadYnabImportConfig().budgetId, { fresh: options.fresh }),
       ]);
-  if (!reuse) lastYnab = { budget, at: Date.now(), data };
+  if (!reuse) lastYnab = { budget, at: Date.now(), writes: ynabWrites(), data };
+  const ynabReadAt = new Date(lastYnab!.at).toISOString();
   const [{ accounts }, { month }, { scheduled_transactions: scheduled }, transactions] = data;
 
   const settings = loadSettings();
@@ -121,6 +128,8 @@ export async function getSpending(token: string, today = new Date().toISOString(
   );
   return {
     today,
+    /** When these numbers were read from YNAB (shown in the header). */
+    ynabReadAt,
     lastScrapedAt,
     periodEnd: end,
     monthlyFlow,

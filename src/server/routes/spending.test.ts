@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ynabRequest = vi.fn();
 vi.mock("../../ynab/import-service.js", () => ({
+  ynabWrites: () => 0,
   getYnabToken: () => "token",
   loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }),
   ynabRequest,

@@ -101,6 +101,13 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
   const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState("");
   const started = useRef(false);
+  // The numbers reload once, 4 s after the last decision, not after every click (YNAB allows 200 calls an hour).
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const reloadSoon = () => {
+    window.clearTimeout(reloadTimer.current);
+    reloadTimer.current = window.setTimeout(() => reload(), 4000);
+  };
+  useEffect(() => () => window.clearTimeout(reloadTimer.current), []);
 
   useEffect(() => {
     if (started.current) return;
@@ -141,7 +148,7 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
       const undo = (await action()) ?? (async () => {});
       setDone((d) => [...d, { label, undo }]);
       setChoosing(false);
-      reload();
+      reloadSoon();
     } catch (e) {
       setError(e instanceof Error ? e.message : "That did not work");
     } finally {
@@ -157,7 +164,7 @@ export function InboxPage({ onLeft, openList }: { onLeft: (left: number | null) 
       await last.undo();
       setDone((d) => d.slice(0, -1));
       setChoosing(false);
-      reload();
+      reloadSoon();
     } catch (e) {
       setError(e instanceof Error ? `Undo failed: ${e.message}` : "Undo failed");
     } finally {

@@ -495,6 +495,8 @@ export interface SpendingData {
     carryoverTo: string;
   };
   today: string;
+  /** When the server read these numbers from YNAB. */
+  ynabReadAt?: string;
   lastScrapedAt: string | null;
   periodEnd: string;
   spentVsIncome: SpentVsIncome;
@@ -528,8 +530,9 @@ export interface SpendingData {
 }
 
 /** quick: after a settings change; the server reuses its last YNAB read. */
-export async function getSpending(quick = false): Promise<SpendingData> {
-  return request(quick ? "/spending?quick=1" : "/spending");
+/** quick: only the settings changed. fresh: the Refresh button; the server reads YNAB now. */
+export async function getSpending(options: { quick?: boolean; fresh?: boolean } = {}): Promise<SpendingData> {
+  return request(options.fresh ? "/spending?fresh=1" : options.quick ? "/spending?quick=1" : "/spending");
 }
 
 export async function saveSpendingSettings(settings: Partial<SpendingSettings>): Promise<SpendingSettings> {

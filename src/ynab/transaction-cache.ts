@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAppConfigDir } from "../env.js";
-import { ynabRequest } from "./import-service.js";
+import { ynabRequest, ynabWrites } from "./import-service.js";
 import type { YnabTransaction } from "./categorize.js";
 
 /**
@@ -37,7 +37,24 @@ export function replaceSinceDate(
   return [...cached.filter((t) => t.date < sinceDate), ...snapshot.filter((t) => !t.deleted)];
 }
 
-export async function getAllTransactions(token: string, budgetId: string): Promise<YnabTransaction[]> {
+/** The last read, shared by every caller for a minute (and while it runs), until this server writes to YNAB. */
+let shared: { budgetId: string; at: number; writes: number; read: Promise<YnabTransaction[]> } | null = null;
+const SHARE_MS = 60_000;
+
+/** `fresh`: read YNAB even when a recent read could be shared (the Refresh button). */
+export async function getAllTransactions(token: string, budgetId: string, options: { fresh?: boolean } = {}): Promise<YnabTransaction[]> {
+  if (!options.fresh && shared && shared.budgetId === budgetId && shared.writes === ynabWrites() && Date.now() - shared.at < SHARE_MS) {
+    return shared.read;
+  }
+  const entry = { budgetId, at: Date.now(), writes: ynabWrites(), read: readTransactions(token, budgetId) };
+  shared = entry;
+  entry.read.catch(() => {
+    if (shared === entry) shared = null;
+  });
+  return entry.read;
+}
+
+async function readTransactions(token: string, budgetId: string): Promise<YnabTransaction[]> {
   const path = cachePath(budgetId);
   const cache: CacheFile | null = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as CacheFile) : null;
 

@@ -34,7 +34,9 @@ export interface SpendingState {
   loading: boolean;
   error: string;
   /** quick: only the settings changed, so the server reuses its last YNAB read. */
-  reload: (options?: { quick?: boolean }) => void;
+  reload: (options?: { quick?: boolean; fresh?: boolean }) => void;
+  /** Counts reloads that read YNAB on request (Refresh, a scrape); pages with their own lists reload on a change. */
+  freshCount: number;
   removeSuggestion: (id: string) => void;
 }
 

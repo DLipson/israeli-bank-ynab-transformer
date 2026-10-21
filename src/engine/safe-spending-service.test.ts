@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ynabRequest = vi.fn();
-vi.mock("../ynab/import-service.js", () => ({ ynabRequest, loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }) }));
+vi.mock("../ynab/import-service.js", () => ({ ynabRequest, ynabWrites: () => 0, loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }) }));
 vi.mock("../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => [] }));
 
 const { getSpending, lastSuccessfulScrapeAt, loadSettings } = await import("./safe-spending-service.js");
@@ -100,13 +100,15 @@ describe("getSpending quick reload", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("reuses the last YNAB data after a settings change, and reads YNAB again otherwise", async () => {
+  it("reuses the last YNAB read after a settings change or within a minute, and reads again when asked", async () => {
     await getSpending("token", "2026-10-20");
     expect(ynabRequest).toHaveBeenCalledTimes(3);
     const quick = await getSpending("token", "2026-10-20", { quick: true });
     expect(ynabRequest).toHaveBeenCalledTimes(3);
     expect(quick.available.periodEnd).toBe("2026-10-31");
     await getSpending("token", "2026-10-20");
+    expect(ynabRequest).toHaveBeenCalledTimes(3); // a read from the last minute is shared
+    await getSpending("token", "2026-10-20", { fresh: true });
     expect(ynabRequest).toHaveBeenCalledTimes(6);
   });
 });

@@ -128,7 +128,8 @@ router.get(
   handle(async (req) => {
     loadAppEnv({ override: true });
     // quick=1: reload after a settings change; reuses the last YNAB read.
-    return getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1" });
+    // fresh=1: the Refresh button; read YNAB now instead of reusing a recent read.
+    return getSpending(getYnabToken(), undefined, { quick: req.query.quick === "1", fresh: req.query.fresh === "1" });
   })
 );
 

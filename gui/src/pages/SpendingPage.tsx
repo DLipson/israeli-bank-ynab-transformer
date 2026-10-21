@@ -19,12 +19,14 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  const reload = useCallback(async (options: { quick?: boolean } = {}) => {
+  const [freshCount, setFreshCount] = useState(0);
+  const reload = useCallback(async (options: { quick?: boolean; fresh?: boolean } = {}) => {
     const request = ++latest.current;
+    if (options.fresh) setFreshCount((n) => n + 1);
     setLoading(true);
     setError("");
     try {
-      const next = await getSpending(options.quick);
+      const next = await getSpending(options);
       if (request === latest.current) {
         setData(next);
         try {
@@ -57,7 +59,7 @@ export function SpendingProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SpendingContext.Provider value={{ data, loading, error, reload, removeSuggestion }}>{children}</SpendingContext.Provider>
+    <SpendingContext.Provider value={{ data, loading, error, reload, freshCount, removeSuggestion }}>{children}</SpendingContext.Provider>
   );
 }
 

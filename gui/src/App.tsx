@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { RotateCw, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrapePage } from "@/pages/ScrapePage";
@@ -15,12 +15,31 @@ import { UpdateChip } from "@/components/UpdateChip";
 import { useSpending } from "@/lib/spending";
 import { cn } from "@/lib/utils";
 
+/** "14:32" today, else "20 Oct 14:32". */
+function readTime(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("en-IL", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString("en-IL", { day: "numeric", month: "short" })} ${time}`;
+}
+
+function Pane({ value, visited, children }: { value: string; visited: Set<string>; children: ReactNode }) {
+  if (!visited.has(value)) return null;
+  return (
+    <TabsContent value={value} forceMount className="data-[state=inactive]:hidden">
+      {children}
+    </TabsContent>
+  );
+}
+
 /** Old tab names that pages still pass to navigate(). */
 const OLD_TABS: Record<string, string> = { review: "inbox", setup: "settings" };
 
 function Shell() {
-  const { data, loading, reload } = useSpending();
+  const { data, loading, reload, freshCount } = useSpending();
   const [tab, setTab] = useState("home");
+  // A tab mounts when it is first opened and then stays mounted, so opening it again does not reload its data.
+  const [visited, setVisited] = useState(() => new Set(["home"]));
+  if (!visited.has(tab)) setVisited(new Set(visited).add(tab));
   const [views, setViews] = useState<Record<string, string>>({ settings: "main" });
   const setView = (t: string) => (v: string) => setViews((all) => ({ ...all, [t]: v }));
   const navigate = (t: string, v?: string) => {
@@ -49,11 +68,16 @@ function Shell() {
           </TabsList>
           <span className="flex-1" />
           <UpdateChip openScrape={() => setTab("scrape")} />
+          {data?.ynabReadAt && (
+            <span className="text-xs text-muted-foreground" title={`Numbers read from YNAB at ${new Date(data.ynabReadAt).toLocaleString("en-IL")}`}>
+              YNAB {readTime(data.ynabReadAt)}
+            </span>
+          )}
           <button
             type="button"
             aria-label="Refresh from YNAB"
             title="Refresh from YNAB"
-            onClick={() => reload()}
+            onClick={() => reload({ fresh: true })}
             disabled={loading}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-60"
           >
@@ -69,37 +93,37 @@ function Shell() {
           </button>
         </div>
 
-        <TabsContent value="home">
+        <Pane value="home" visited={visited}>
           <HomePage navigate={navigate} />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="inbox">
-          <InboxPage onLeft={setInboxQueueLeft} openList={() => setTab("categorize")} />
-        </TabsContent>
+        <Pane value="inbox" visited={visited}>
+          <InboxPage key={freshCount} onLeft={setInboxQueueLeft} openList={() => setTab("categorize")} />
+        </Pane>
 
-        <TabsContent value="categorize">
+        <Pane value="categorize" visited={visited}>
           <CategorizePage />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="cards">
+        <Pane value="cards" visited={visited}>
           <CardsPage navigate={navigate} openGroup={views.cards} />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="scrape">
+        <Pane value="scrape" visited={visited}>
           <ScrapePage openInbox={() => setTab("inbox")} openHistory={() => setTab("history")} />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="history">
+        <Pane value="history" visited={visited}>
           <HistoryPage />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="settings">
+        <Pane value="settings" visited={visited}>
           <SettingsPage view={views.settings ?? "main"} setView={setView("settings")} />
-        </TabsContent>
+        </Pane>
 
-        <TabsContent value="reports">
+        <Pane value="reports" visited={visited}>
           <ReportsPage />
-        </TabsContent>
+        </Pane>
       </Tabs>
     </div>
   );
