@@ -2,8 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { listRuns, type RunSummary } from "../history.js";
 import { ensureAppConfigDirExists, getAppConfigDir } from "../env.js";
-import { loadYnabImportConfig, ynabRequest, ynabWrites } from "../ynab/import-service.js";
-import { getAllTransactions } from "../ynab/transaction-cache.js";
+import { loadYnabImportConfig, ynabReadTime, ynabRequest, ynabWrites } from "../ynab/import-service.js";
+import { getAllTransactions, transactionsReadTime } from "../ynab/transaction-cache.js";
 import {
   DEFAULT_SETTINGS,
   leftCashflow,
@@ -67,30 +67,37 @@ export function lastSuccessfulScrapeAt(runs: Pick<RunSummary, "createdAt" | "acc
 
 type YnabData = [{ accounts: Account[] }, { month: Month }, { scheduled_transactions: ScheduledTransaction[] }, Awaited<ReturnType<typeof getAllTransactions>>];
 
-/** The last YNAB read. Reused for a minute (10 minutes after a settings change) unless this server wrote to YNAB since. */
-let lastYnab: { budget: string; at: number; writes: number; data: YnabData } | null = null;
-const SHARE_MS = 60_000;
+/** The last YNAB read, kept only for `quick` calls (10 minutes, unless this server wrote to YNAB since). */
+let lastYnab: { budget: string; readAt: number; writes: number; data: YnabData } | null = null;
 const QUICK_MAX_AGE_MS = 10 * 60_000;
 
 /**
- * `quick`: only the settings changed. `fresh`: the user asked to refresh, so read YNAB now.
- * Otherwise a read from the last minute is reused, so tabs and reloads do not each call YNAB.
+ * `quick`: only the settings changed, so reuse the last read. `fresh`: the user asked to refresh, so read YNAB now.
+ * Otherwise the four reads go to code that shares a read from the last minute, so tabs and reloads do not each call YNAB.
  */
 export async function getSpending(token: string, today = new Date().toISOString().slice(0, 10), options: { quick?: boolean; fresh?: boolean } = {}) {
   const budget = budgetPath();
-  const age = lastYnab ? Date.now() - lastYnab.at : Infinity;
+  const budgetId = loadYnabImportConfig().budgetId;
   const reuse =
-    !options.fresh && lastYnab?.budget === budget && lastYnab.writes === ynabWrites() && age < (options.quick ? QUICK_MAX_AGE_MS : SHARE_MS);
-  const data: YnabData = reuse
-    ? lastYnab!.data
-    : await Promise.all([
-        ynabRequest<{ accounts: Account[] }>(token, `${budget}/accounts`, { fresh: options.fresh }),
-        ynabRequest<{ month: Month }>(token, `${budget}/months/current`, { fresh: options.fresh }),
-        ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, `${budget}/scheduled_transactions`, { fresh: options.fresh }),
-        getAllTransactions(token, loadYnabImportConfig().budgetId, { fresh: options.fresh }),
-      ]);
-  if (!reuse) lastYnab = { budget, at: Date.now(), writes: ynabWrites(), data };
-  const ynabReadAt = new Date(lastYnab!.at).toISOString();
+    !!options.quick && !options.fresh && lastYnab?.budget === budget && lastYnab.writes === ynabWrites() && Date.now() - lastYnab.readAt < QUICK_MAX_AGE_MS;
+  let data: YnabData;
+  if (reuse) {
+    data = lastYnab!.data;
+  } else {
+    const [accountsPath, monthPath, scheduledPath] = [`${budget}/accounts`, `${budget}/months/current`, `${budget}/scheduled_transactions`];
+    data = await Promise.all([
+      ynabRequest<{ accounts: Account[] }>(token, accountsPath, { fresh: options.fresh }),
+      ynabRequest<{ month: Month }>(token, monthPath, { fresh: options.fresh }),
+      ynabRequest<{ scheduled_transactions: ScheduledTransaction[] }>(token, scheduledPath, { fresh: options.fresh }),
+      getAllTransactions(token, budgetId, { fresh: options.fresh }),
+    ]);
+    // A shared read can be older than this call, so show the oldest of the four.
+    const times = [ynabReadTime(accountsPath), ynabReadTime(monthPath), ynabReadTime(scheduledPath), transactionsReadTime(budgetId)].filter(
+      (t): t is number => t !== undefined
+    );
+    lastYnab = { budget, readAt: times.length ? Math.min(...times) : Date.now(), writes: ynabWrites(), data };
+  }
+  const ynabReadAt = new Date(lastYnab!.readAt).toISOString();
   const [{ accounts }, { month }, { scheduled_transactions: scheduled }, transactions] = data;
 
   const settings = loadSettings();

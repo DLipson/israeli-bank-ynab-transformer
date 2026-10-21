@@ -59,7 +59,13 @@ async function scrapeAccountWithRetry(
     try {
       const scraper = createScraper(options);
       // Not every scraper has `terminate` (only browser scrapers do).
-      const stop = () => void (scraper as { terminate?: (success: boolean) => Promise<void> }).terminate?.(false).catch(() => {});
+      // `terminate` itself emits a progress event, so run `stop` only once or it calls itself without end.
+      let stopped = false;
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        void (scraper as { terminate?: (success: boolean) => Promise<void> }).terminate?.(false).catch(() => {});
+      };
 
       scraper.onProgress((companyId, payload) => {
         onProgress?.(`  [${account.name}] ${payload.type}`, account.name);

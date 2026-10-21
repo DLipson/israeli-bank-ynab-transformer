@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ynabRequest = vi.fn();
-vi.mock("../ynab/import-service.js", () => ({ ynabRequest, ynabWrites: () => 0, loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }) }));
-vi.mock("../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => [] }));
+const ynabReadTime = vi.fn((_path: string): number | undefined => undefined);
+const transactionsReadTime = vi.fn((_budgetId: string): number | undefined => undefined);
+vi.mock("../ynab/import-service.js", () => ({ ynabRequest, ynabReadTime, ynabWrites: () => 0, loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }) }));
+vi.mock("../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => [], transactionsReadTime }));
 
 const { getSpending, lastSuccessfulScrapeAt, loadSettings } = await import("./safe-spending-service.js");
 
@@ -86,6 +88,8 @@ describe("getSpending quick reload", () => {
     dir = mkdtempSync(join(tmpdir(), "safe-spending-quick-"));
     process.env.ISRAELI_BANK_YNAB_CONFIG_DIR = dir;
     ynabRequest.mockReset();
+    ynabReadTime.mockReset();
+    transactionsReadTime.mockReset();
     ynabRequest.mockImplementation(async (_token: string, path: string) => {
       if (path.endsWith("/accounts")) return { accounts: [] };
       if (path.endsWith("/months/current")) return { month: { month: "2026-10-01", to_be_budgeted: 0, categories: [] } };
@@ -100,15 +104,28 @@ describe("getSpending quick reload", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("reuses the last YNAB read after a settings change or within a minute, and reads again when asked", async () => {
+  it("reuses the last YNAB read after a settings change, and reads again when asked", async () => {
     await getSpending("token", "2026-10-20");
     expect(ynabRequest).toHaveBeenCalledTimes(3);
     const quick = await getSpending("token", "2026-10-20", { quick: true });
     expect(ynabRequest).toHaveBeenCalledTimes(3);
     expect(quick.available.periodEnd).toBe("2026-10-31");
-    await getSpending("token", "2026-10-20");
-    expect(ynabRequest).toHaveBeenCalledTimes(3); // a read from the last minute is shared
-    await getSpending("token", "2026-10-20", { fresh: true });
+    await getSpending("token", "2026-10-20"); // sharing for a minute is done by the lower layers
     expect(ynabRequest).toHaveBeenCalledTimes(6);
+    await getSpending("token", "2026-10-20", { fresh: true });
+    expect(ynabRequest).toHaveBeenCalledTimes(9);
+  });
+
+  it("shows the oldest read time of the four reads", async () => {
+    const times: Record<string, number> = { accounts: 5000, current: 3000, scheduled_transactions: 4000 };
+    ynabReadTime.mockImplementation((path: string) => times[path.split("/").pop()!]);
+    transactionsReadTime.mockReturnValue(6000);
+    const first = await getSpending("token", "2026-10-20");
+    expect(first.ynabReadAt).toBe(new Date(3000).toISOString());
+    transactionsReadTime.mockReturnValue(1000);
+    const second = await getSpending("token", "2026-10-20");
+    expect(second.ynabReadAt).toBe(new Date(1000).toISOString());
+    const quick = await getSpending("token", "2026-10-20", { quick: true });
+    expect(quick.ynabReadAt).toBe(new Date(1000).toISOString());
   });
 });

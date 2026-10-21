@@ -77,10 +77,11 @@ export function getRun(id: string): RunRecord | null {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as RunRecord) : null;
 }
 
-const parsedRuns = new Map<string, { mtimeMs: number; size: number; record: RunRecord }>();
+/** Only what the callers need: the summary and the rows (not skipped rows or the audit log). */
+const parsedRuns = new Map<string, { mtimeMs: number; size: number; summary: RunSummary; rows: unknown[] }>();
 
-/** Read-only: callers must not change the record. Parsed once; parsed again only when the file changes. */
-export function readRunCached(id: string): RunRecord | null {
+/** Read-only: callers must not change the result. Parsed once; parsed again only when the file changes. */
+export function readRunSummaryCached(id: string): { summary: RunSummary; rows: unknown[] } | null {
   const path = runPath(id);
   let stat;
   try {
@@ -90,10 +91,17 @@ export function readRunCached(id: string): RunRecord | null {
     return null;
   }
   const hit = parsedRuns.get(path);
-  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.record;
-  const record = JSON.parse(readFileSync(path, "utf-8")) as RunRecord;
-  parsedRuns.set(path, { mtimeMs: stat.mtimeMs, size: stat.size, record });
-  return record;
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit;
+  const { payload, ...rest } = JSON.parse(readFileSync(path, "utf-8")) as RunRecord;
+  const summary: RunSummary = {
+    ...rest,
+    rowCount: payload.rows.length,
+    totalOutflow: payload.summary.totalOutflow,
+    totalInflow: payload.summary.totalInflow,
+  };
+  const entry = { mtimeMs: stat.mtimeMs, size: stat.size, summary, rows: payload.rows };
+  parsedRuns.set(path, entry);
+  return entry;
 }
 
 export function updateRun(id: string, update: (record: RunRecord) => void): void {
@@ -107,17 +115,12 @@ export function updateRun(id: string, update: (record: RunRecord) => void): void
 export function listRuns(): RunSummary[] {
   const dir = getHistoryDir();
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  const ids = readdirSync(dir)
     .map((file) => file.replace(/\.json$/, ""))
     .filter((id) => RUN_ID_PATTERN.test(id))
-    .sort((a, b) => Number(b) - Number(a))
-    .map((id) => {
-      const { payload, ...rest } = readRunCached(id)!;
-      return {
-        ...rest,
-        rowCount: payload.rows.length,
-        totalOutflow: payload.summary.totalOutflow,
-        totalInflow: payload.summary.totalInflow,
-      };
-    });
+    .sort((a, b) => Number(b) - Number(a));
+  // Forget runs whose file is gone, so the cache cannot hold deleted runs.
+  const listed = new Set(ids.map((id) => runPath(id)));
+  for (const path of parsedRuns.keys()) if (!listed.has(path)) parsedRuns.delete(path);
+  return ids.map((id) => readRunSummaryCached(id)!.summary);
 }

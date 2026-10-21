@@ -11,6 +11,7 @@ vi.mock("../../ynab/import-service.js", () => ({
   getYnabToken: () => "token",
   loadYnabImportConfig: () => ({ budgetId: "b", mappings: [] }),
   ynabRequest,
+  ynabReadTime: () => undefined,
 }));
 
 const setCategory = vi.fn();
@@ -24,7 +25,7 @@ const cached = [
   { id: "cardpay", date: "2026-10-02", amount: 7_577_000, payee_name: "Transfer : Main", category_id: null, category_name: null, account_id: "c", account_name: "Card", transfer_account_id: "m", memo: null, deleted: false },
   { id: "old", date: "2026-05-01", amount: -100_000, payee_name: "Old shop", category_id: "clothing", category_name: "Clothing", account_id: "c", account_name: "Card", transfer_account_id: null, memo: null, deleted: false },
 ];
-vi.mock("../../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => cached }));
+vi.mock("../../ynab/transaction-cache.js", () => ({ getAllTransactions: async () => cached, transactionsReadTime: () => undefined }));
 
 vi.mock("../../windows-credential-manager.js", () => ({
   deleteBankCredentialsFromWindowsCredentialManager: vi.fn(),

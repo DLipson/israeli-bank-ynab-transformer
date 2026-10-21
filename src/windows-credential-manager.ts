@@ -38,18 +38,18 @@ export function getBankCredentialEnvVars(): string[] {
 }
 
 // Each read starts PowerShell and compiles C# (~1.5 s), and spawnSync blocks the whole server meanwhile.
-// ponytail: read once per server start; this app's saves and deletes force a new read.
-// A credential changed outside the app needs a server restart.
-let hydrated = false;
+// ponytail: read once per server start; a failed read is retried after a minute.
+// This app's saves and deletes force a new read. A credential changed outside the app needs a server restart.
+const RETRY_AFTER_FAILURE_MS = 60_000;
+let nextReadAt = 0;
 
 export function hydrateEnvWithStoredBankCredentials(): void {
   if (!isWindowsCredentialManagerAvailable()) {
     return;
   }
-  if (hydrated) {
+  if (Date.now() < nextReadAt) {
     return;
   }
-  hydrated = true;
 
   try {
     const envVars = getBankCredentialEnvVars();
@@ -63,8 +63,10 @@ export function hydrateEnvWithStoredBankCredentials(): void {
         process.env[envVar] = value;
       }
     }
+    nextReadAt = Infinity;
   } catch {
     // Fail-open so startup still works even if credential manager access fails.
+    nextReadAt = Date.now() + RETRY_AFTER_FAILURE_MS;
   }
 }
 
@@ -84,7 +86,7 @@ export function saveBankCredentialsToWindowsCredentialManager(updates: Record<st
   }
 
   runCredentialScript("SetMany", { itemsJson: JSON.stringify(items) });
-  hydrated = false;
+  nextReadAt = 0;
 }
 
 export function deleteBankCredentialsFromWindowsCredentialManager(envVars: string[]): void {
@@ -100,7 +102,7 @@ export function deleteBankCredentialsFromWindowsCredentialManager(envVars: strin
     "DeleteMany",
     { itemsJson: JSON.stringify(envVars.map((envVar) => toTarget(envVar))) }
   );
-  hydrated = false;
+  nextReadAt = 0;
 }
 
 function toTarget(envVar: string): string {

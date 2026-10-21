@@ -45,6 +45,9 @@ export function replaceSinceDate(
 let shared: { budgetId: string; at: number; writes: number; read: Promise<YnabTransaction[]> } | null = null;
 const SHARE_MS = 60_000;
 
+/** When the shared read of this budget started, if there is one. */
+export const transactionsReadTime = (budgetId: string): number | undefined => (shared?.budgetId === budgetId ? shared.at : undefined);
+
 /** `fresh`: read YNAB even when a recent read could be shared (the Refresh button). */
 export async function getAllTransactions(token: string, budgetId: string, options: { fresh?: boolean } = {}): Promise<YnabTransaction[]> {
   if (!options.fresh && shared && shared.budgetId === budgetId && shared.writes === ynabWrites() && Date.now() - shared.at < SHARE_MS) {

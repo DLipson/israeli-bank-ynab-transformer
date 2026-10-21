@@ -121,6 +121,9 @@ export const ynabWrites = (): number => writes;
 const SHARE_MS = 60_000;
 const sharedReads = new Map<string, { at: number; writes: number; read: Promise<unknown> }>();
 
+/** When the shared GET of this path was read, if there is one. */
+export const ynabReadTime = (path: string): number | undefined => sharedReads.get(path)?.at;
+
 /**
  * Sends a YNAB request. A GET of the same path is shared for a minute (and while it runs), until this
  * server writes to YNAB; `fresh: true` reads again. Other methods are never shared.

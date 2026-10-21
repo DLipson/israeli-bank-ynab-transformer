@@ -164,19 +164,21 @@ describe("scrapeAccount", () => {
     await expect(promise).resolves.toMatchObject({ success: false, error: "Canceled" });
   });
 
-  it("closes the browser again on a progress event after the abort", async () => {
+  it("closes the browser only once even when terminate reports progress", async () => {
     const controller = new AbortController();
     const { scraper, release } = makePendingScraper();
     mockedCreateScraper.mockReturnValue(scraper);
+    const messages: string[] = [];
 
-    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, undefined, controller.signal);
+    const promise = scrapeAccount(makeAccount(), new Date("2026-06-01"), false, (m) => messages.push(m), controller.signal);
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();
     expect(scraper.terminate).toHaveBeenCalledTimes(1);
 
     const callback = vi.mocked(scraper.onProgress).mock.calls[0][0];
     callback("leumi" as never, { type: "LOGGING_IN" } as never);
-    expect(scraper.terminate).toHaveBeenCalledTimes(2);
+    expect(scraper.terminate).toHaveBeenCalledTimes(1);
+    expect(messages.filter((m) => m.includes("TERMINATING"))).toHaveLength(1);
 
     release({ success: false, errorType: "GENERIC", errorMessage: "Target closed" });
     await promise;
@@ -212,10 +214,14 @@ describe("scrapeAccount", () => {
 
 function makePendingScraper() {
   let release!: (result: unknown) => void;
+  let cb: ((id: string, payload: { type: string }) => void) | undefined;
+  // Like the real library: terminate emits a progress event at once.
   const scraper = {
-    onProgress: vi.fn(),
+    onProgress: vi.fn((fn) => void (cb = fn)),
     scrape: vi.fn().mockReturnValue(new Promise((resolve) => (release = resolve))),
-    terminate: vi.fn().mockResolvedValue(undefined),
+    terminate: vi.fn(async () => {
+      cb?.("id", { type: "TERMINATING" });
+    }),
   } as unknown as ReturnType<typeof createScraper> & { terminate: ReturnType<typeof vi.fn> };
   return { scraper, release };
 }
