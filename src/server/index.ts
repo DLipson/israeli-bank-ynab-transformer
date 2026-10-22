@@ -6,6 +6,7 @@ import historyRouter from "./routes/history.js";
 import categorizeRouter from "./routes/categorize.js";
 import spendingRouter from "./routes/spending.js";
 import { loadAppEnv } from "../env.js";
+import { localOnly } from "./guards.js";
 
 const app = express();
 // PORT lets a second checkout (e.g. a git worktree) run next to the main one.
@@ -13,6 +14,7 @@ const PORT = Number(process.env.PORT) || 3001;
 
 loadAppEnv();
 
+app.use(localOnly);
 app.use(express.json({ limit: "50mb" }));
 
 // Routes

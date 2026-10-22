@@ -16,7 +16,7 @@ import {
   type SearchHit,
   type YnabTransaction,
 } from "./categorize.js";
-import { summarizeSerper } from "./categorize-service.js";
+import { opencodeEnv, summarizeSerper } from "./categorize-service.js";
 import { mergeDelta, replaceSinceDate } from "./transaction-cache.js";
 
 const categories: CategoryOption[] = [
@@ -281,5 +281,23 @@ describe("replaceSinceDate", () => {
 
     const merged = replaceSinceDate([older, stale], [current, deleted], "2026-09-01");
     expect(merged.map((t) => t.id)).toEqual(["older", "current"]);
+  });
+});
+
+describe("opencodeEnv", () => {
+  it("drops secrets and keeps the allowlist", () => {
+    const env = opencodeEnv(
+      {
+        LEUMI_PASSWORD: "a",
+        YNAB_API_TOKEN: "b",
+        SERPER_API_KEY: "c",
+        PATH: "p",
+        HOME: "h",
+        OPENCODE_X: "o",
+        path: "lower",
+      },
+      "/work"
+    );
+    expect(env).toEqual({ PATH: "p", HOME: "h", OPENCODE_X: "o", path: "lower", PWD: "/work" });
   });
 });

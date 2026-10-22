@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { extname, isAbsolute, join, resolve } from "node:path";
+import { isUncPath } from "../guards.js";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { loadConfig } from "../../config.js";
@@ -250,6 +251,11 @@ router.post("/export", (req: Request, res: Response) => {
     return;
   }
 
+  if (typeof outputDir !== "string" || isUncPath(outputDir) || !isAbsolute(outputDir)) {
+    res.status(400).json({ error: "outputDir must be a local absolute path" });
+    return;
+  }
+
   try {
     if (!existsSync(outputDir)) {
       mkdirSync(outputDir, { recursive: true });
@@ -337,12 +343,21 @@ router.post("/open-path", (req: Request, res: Response) => {
     return;
   }
 
-  const resolvedPath = resolve(path);
+  const resolvedPath = resolve(String(path));
+  // Check before statSync: a UNC path makes statSync open an SMB connection.
+  if (isUncPath(String(path)) || isUncPath(resolvedPath)) {
+    res.status(400).json({ error: "Network paths are not allowed" });
+    return;
+  }
 
   try {
     const stats = statSync(resolvedPath);
     if (!stats.isFile() && !stats.isDirectory()) {
       res.status(400).json({ error: "Path must be a file or directory" });
+      return;
+    }
+    if (stats.isFile() && ![".csv", ".log", ".json", ".txt"].includes(extname(resolvedPath).toLowerCase())) {
+      res.status(400).json({ error: "File type not allowed" });
       return;
     }
   } catch {

@@ -165,6 +165,24 @@ async function searchHits(items: CategorizeItem[]): Promise<Map<string, SearchHi
 
 // --- opencode (Big Pickle) ---
 
+// Allowlist, so a new secret is never passed by accident.
+const OPENCODE_ENV_KEYS = new Set([
+  "PATH", "PATHEXT", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "WINDIR",
+  "COMSPEC", "TEMP", "TMP", "TMPDIR", "LANG", "TERM", "USER", "USERNAME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+  "ALL_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+]);
+
+/** The environment opencode gets: no bank passwords, YNAB token or Serper key. */
+export function opencodeEnv(source: NodeJS.ProcessEnv, pwd: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(source)) {
+    const upper = key.toUpperCase();
+    if (OPENCODE_ENV_KEYS.has(upper) || upper.startsWith("OPENCODE_")) env[key] = value;
+  }
+  env.PWD = pwd;
+  return env;
+}
+
 /**
  * Runs the prompt through `opencode run` in an empty temp folder.
  * Big Pickle's free tier rejects a locked-down opencode config, so the model still has tools.
@@ -180,7 +198,7 @@ export function runOpencode(prompt: string): Promise<string> {
       ["run", prompt, "-m", LLM_MODEL, "--pure", "--format", "json"],
       // PWD: opencode picks its project folder from PWD, not from cwd.
       // stdin "ignore": with an open stdin pipe, opencode waits for more input before it starts.
-      { cwd: dir, env: { ...process.env, PWD: dir }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
+      { cwd: dir, env: opencodeEnv(process.env, dir), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
     );
     let stdout = "";
     let stderr = "";
