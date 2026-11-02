@@ -20,7 +20,8 @@ import {
   spendingCategoryIds,
 } from "../../engine/safe-spending-service.js";
 import { paydayFromPeriodEnd, type CreditLimitGroup, type Settings } from "../../engine/safe-spending.js";
-import { generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
+import { exportMonths, generateReport, latestReports, REPORT_TYPES } from "../../engine/reports-service.js";
+import { lastFullMonth } from "../../engine/month-export.js";
 import type { ReportType } from "../../engine/reports.js";
 import { deleteImported, getReconcile, importMissing } from "../../engine/reconcile-service.js";
 
@@ -277,6 +278,21 @@ router.delete(
 );
 
 router.get("/reports", handle(() => latestReports()));
+
+/** One JSON file with full data for the months from..to (default: last full month). Read-only towards YNAB. */
+router.get("/reports/export", async (req, res) => {
+  try {
+    const last = lastFullMonth(new Date().toISOString().slice(0, 10));
+    const from = typeof req.query.from === "string" && req.query.from ? req.query.from : last;
+    const to = typeof req.query.to === "string" && req.query.to ? req.query.to : last;
+    loadAppEnv({ override: true });
+    const data = await exportMonths(getYnabToken(), from, to);
+    res.setHeader("Content-Disposition", `attachment; filename="ibyt-months-${from}-${to}.json"`);
+    res.json(data);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 router.get(
   "/reconcile",

@@ -5,6 +5,7 @@ import { loadYnabImportConfig, ynabRequest } from "../ynab/import-service.js";
 import { getSpending } from "./safe-spending-service.js";
 import { pastMonths } from "./baseline.js";
 import { spendingCategories, type Month } from "./safe-spending.js";
+import { buildMonthExport, monthsInRange, validateRange, type MonthExport } from "./month-export.js";
 import { dueReports, monthlyReport, type Report, type ReportState, type ReportType } from "./reports.js";
 
 /** Report types that can be made now. */
@@ -76,6 +77,46 @@ export async function generateReport(token: string, type: ReportType = "monthly"
   );
   save(report, today.slice(0, 7));
   return report;
+}
+
+/** One JSON object with full data for the months from..to (yyyy-mm). Read-only towards YNAB. */
+export async function exportMonths(token: string, from: string, to: string, now = new Date()): Promise<MonthExport> {
+  const today = now.toISOString().slice(0, 10);
+  validateRange(from, to, today);
+  const s = await getSpending(token, today);
+  const budget = `/budgets/${encodeURIComponent(loadYnabImportConfig().budgetId)}`;
+  const normals = new Map(s.baseline.categories.map((c) => [c.name, c.normalMonth]));
+  const groupOf = new Map(s.categories.map((c) => [c.id, c.group]));
+  const months = await Promise.all(
+    monthsInRange(from, to).map(async (m) => {
+      const { month: ynabMonth } = await ynabRequest<{ month: Month }>(token, `${budget}/months/${m}-01`);
+      return {
+        month: m,
+        detail: s.monthDetail(m),
+        fixedSpent: s.fixedSpent(m),
+        categories: spendingCategories(ynabMonth)
+          .filter((c) => groupOf.has(c.id))
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            group: groupOf.get(c.id)!,
+            type: s.categoryTypes[c.id] ?? "",
+            assigned: c.budgeted,
+            spent: -(c.activity ?? 0),
+            normal: normals.get(c.name) ?? 0,
+          })),
+      };
+    })
+  );
+  const { payday, baselineMonths, flexibleCategoryIds, essentialCategoryIds } = s.settings;
+  return buildMonthExport({
+    madeAt: now.toISOString(),
+    today,
+    dataAsOf: s.baseline.asOf,
+    lastScrapedAt: s.lastScrapedAt,
+    settings: { payday, baselineMonths, flexibleCategoryIds, essentialCategoryIds },
+    months,
+  });
 }
 
 /** The daily scheduled run: makes the monthly report when it is due, once a month. */

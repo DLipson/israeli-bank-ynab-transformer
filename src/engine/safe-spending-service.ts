@@ -153,6 +153,19 @@ export async function getSpending(token: string, today = new Date().toISOString(
       const flow = monthlyFlowFor(flowTransactions, items, month.categories, lastDay);
       return { month: m, income: flow.income, spent: flow.expenses };
     },
+    /** Full spent-vs-income detail of a past month or the current month (yyyy-mm), with raw memos by transaction id, for the month export. */
+    monthDetail: (m: string) => {
+      const [y, mo] = m.split("-").map(Number);
+      const through = today.slice(0, 7) === m ? today : new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
+      const flow = monthlyFlowFor(flowTransactions, items, month.categories, through);
+      const detail = spentVsIncomeFor(flowTransactions, items, month.categories, accounts, flow, through);
+      const ids = new Set([...detail.spendingItems, ...detail.incomeParts.flatMap((p) => p.items)].map((i) => i.id));
+      const memos: Record<string, string> = {};
+      for (const t of flowTransactions) if (ids.has(t.id)) memos[t.id] = t.memo ?? "";
+      return { ...detail, through, memos };
+    },
+    /** Category id to its type (fixed, flexible, ...) today. */
+    categoryTypes: Object.fromEntries(comparisons.map((c) => [c.categoryId, c.type as string])),
     /** Spending in a month in the categories that are fixed today. */
     fixedSpent: (m: string) => {
       const fixed = new Set(comparisons.filter((c) => c.type === "fixed").map((c) => c.categoryId));
