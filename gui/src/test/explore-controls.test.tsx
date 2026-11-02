@@ -70,6 +70,31 @@ function Independent() {
   );
 }
 
+const MANY = Array.from({ length: 36 }, (_, i) => `m${String(i).padStart(2, "0")}`);
+const COUNTS = [1, 2, 3, 6, 12, 24];
+
+/** Bug only for one pair: the oldest month together with 24 months resets the count. */
+function PairBug() {
+  const [end, setEnd] = useState(MANY[0]);
+  const [count, setCount] = useState(1);
+  return (
+    <div>
+      <label>
+        Up to
+        <select value={end} onChange={(e) => setEnd(e.target.value)}>
+          {MANY.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </label>
+      <label>
+        Months
+        <select value={count} onChange={(e) => setCount(end === MANY[35] && e.target.value === "24" ? 12 : Number(e.target.value))}>
+          {COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
 describe("exploreControls", { timeout: 60_000 }, () => {
   it("finds a control that moves another control (I3)", async () => {
     await expect(exploreControls(<AutoMove />)).rejects.toThrow(/I3 violated/);
@@ -81,6 +106,10 @@ describe("exploreControls", { timeout: 60_000 }, () => {
 
   it("finds options that the other control disables (I1)", async () => {
     await expect(exploreControls(<DisabledByOther />)).rejects.toThrow(/I1 violated/);
+  });
+
+  it("finds a bug that needs one specific pair, with the default sampling", async () => {
+    await expect(exploreControls(<PairBug />)).rejects.toThrow(/I2 violated/);
   });
 
   it("passes independent controls", async () => {

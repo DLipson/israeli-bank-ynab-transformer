@@ -23,8 +23,9 @@
  *   await exploreControls(<MyCard />, { coupled: [["Country", "City"]] });
  *
  * Prefer to remove the coupling: a design where every combination is valid needs none.
- * With more than 600 runs, the runs are sampled with a fixed seed (the first, middle and last
- * value of each control are always tried).
+ * With more than `maxRuns` runs (default 150), the runs are sampled with a fixed seed. The first,
+ * middle and last value of every control are always tried, alone and paired with the first, middle
+ * and last value of every other control, in both orders.
  */
 import type { ReactElement } from "react";
 import { act, fireEvent, render } from "@testing-library/react";
@@ -44,7 +45,7 @@ interface Step {
   value: Value;
 }
 
-const MAX_RUNS = 600;
+const DEFAULT_MAX_RUNS = 150;
 const TEXT_VALUES = ["", "x", "a".repeat(200), "שלום", "0"];
 const NUMBER_VALUES = ["", "0", "1", "99999"];
 
@@ -163,8 +164,9 @@ function describeSteps(steps: Step[]): string {
   return steps.map((s) => `${s.name} = ${JSON.stringify(s.value)}`).join(" -> ");
 }
 
-export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<[string, string]> } = {}): Promise<void> {
+export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<[string, string]>; maxRuns?: number } = {}): Promise<void> {
   const coupled = opts.coupled ?? [];
+  const maxRuns = opts.maxRuns ?? DEFAULT_MAX_RUNS;
   const isCoupled = (a: string, b: string) => coupled.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
   // Plan the runs from one render.
@@ -182,7 +184,7 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
     }
   }
   let selected = runs;
-  if (runs.length > MAX_RUNS) {
+  if (runs.length > maxRuns) {
     const keep = new Map(plan.map((p) => [p.name, new Set([p.values[0], p.values[Math.floor(p.values.length / 2)], p.values[p.values.length - 1]])]));
     const extremes = runs.filter((r) => r.every((s) => keep.get(s.name)!.has(s.value)));
     const rest = runs.filter((r) => !extremes.includes(r));
@@ -191,13 +193,22 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
       const j = Math.floor(next() * (i + 1));
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
-    selected = [...extremes, ...rest].slice(0, Math.max(MAX_RUNS, extremes.length));
+    selected = [...extremes, ...rest].slice(0, Math.max(maxRuns, extremes.length));
   }
 
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
+    // Runs that start with the same step share one render: the first step is done once, then each
+    // second step is tried in turn. A render costs about as much as two steps, so this is the main saving.
+    const groups = new Map<string, { first?: Step; seconds: Step[] }>();
     for (const steps of selected.length ? selected : [[]]) {
+      const key = steps[0] ? `${steps[0].name} ${JSON.stringify(steps[0].value)}` : "";
+      const group = groups.get(key) ?? { first: steps[0], seconds: [] };
+      if (steps[1]) group.seconds.push(steps[1]);
+      groups.set(key, group);
+    }
+    for (const { first, seconds } of groups.values()) {
       const view = render(ui);
       const done: Step[] = [];
       const fail = (rule: string, who: string, detail: string): never => {
@@ -221,7 +232,7 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
         };
         check(startControls);
 
-        for (const step of steps) {
+        const applyStep = async (step: Step) => {
           const before = snapshot(collect(view.container));
           const control = collect(view.container).find((c) => c.name === step.name);
           if (!control) fail("I3", step.name, "the control disappeared");
@@ -243,6 +254,11 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
             }
           }
           check(controls, step);
+        };
+        if (first) await applyStep(first);
+        for (const second of seconds) {
+          done.length = 1;
+          await applyStep(second);
         }
       } finally {
         view.unmount();

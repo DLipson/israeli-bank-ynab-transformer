@@ -94,5 +94,5 @@ describe("Export months", () => {
 
   it("keeps its controls independent (explore every value and pair)", async () => {
     await exploreControls(<ExportCard />);
-  }, 120_000);
+  }, 20_000);
 });
