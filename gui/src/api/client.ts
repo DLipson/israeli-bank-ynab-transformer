@@ -637,6 +637,25 @@ export async function generateReport(type: ReportType): Promise<Report> {
   return request(`/spending/reports/${type}`, { method: "POST" });
 }
 
+/** Downloads one JSON file with the counted transactions, income and totals of each month from..to (yyyy-mm). */
+export async function exportMonths(from: string, to: string): Promise<void> {
+  const res = await fetch(`${BASE}/spending/reports/export?${new URLSearchParams({ from, to })}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const name = /filename="?([^";]+)"?/i.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `ibyt-months-${from}-${to}.json`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // --- Reconcile ---
 
 export interface AccountReconcile {

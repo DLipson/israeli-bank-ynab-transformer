@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ExportCard } from "@/components/ExportCard";
 import { generateReport, getReports, type Report, type ReportType } from "@/api/client";
+import { useAsyncAction } from "@/lib/use-async-action";
+import { useResource } from "@/lib/use-resource";
 import { card, label } from "@/lib/rows";
 import { formatDate, monthLabel, shekels } from "@/lib/spending";
 import { cn } from "@/lib/utils";
@@ -81,41 +83,28 @@ function ReportView({ report }: { report: Report }) {
 
 /** The monthly report (opens from Home), and older saved reports below it. */
 export function ReportsPage() {
-  const [reports, setReports] = useState<Record<ReportType, Report | null> | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    getReports()
-      .then(setReports)
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load reports"));
-  }, []);
+  const { data: reports, error: loadError, setData } = useResource(getReports);
+  const make = useAsyncAction(async () => {
+    const report = await generateReport("monthly");
+    setData((all) => (all ? { ...all, monthly: report } : all));
+  });
+  const { busy, error } = make;
 
-  const make = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const report = await generateReport("monthly");
-      setReports((all) => (all ? { ...all, monthly: report } : all));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!reports) return error ? <p className="text-sm text-destructive">{error}</p> : <p className="flex items-center gap-2 p-4 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading reports…</p>;
+  if (!reports) return loadError ? <p className="text-sm text-destructive">{loadError}</p> : <p className="flex items-center gap-2 p-4 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading reports…</p>;
   const monthly = reports.monthly;
   const older = (Object.keys(OLD_NAMES) as Array<keyof typeof OLD_NAMES>).filter((t) => reports[t]);
 
   return (
     <div className="space-y-3">
+      <ExportCard />
+
       <div className={card}>
         <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="font-medium">{monthly?.title ?? "Monthly report"}</p>
             <p className={label}>Made on the 1st of each month by the daily task.</p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => void make()} disabled={busy}>
+          <Button size="sm" variant="outline" onClick={() => void make.run()} disabled={busy}>
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Make it again now
           </Button>
         </div>
