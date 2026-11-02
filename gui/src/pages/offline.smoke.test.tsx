@@ -1,6 +1,9 @@
+import type { ComponentType } from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import App from "@/App";
+import { SpendingProvider } from "@/pages/SpendingPage";
+import { ScrapeRunProvider } from "@/components/ScrapeRunProvider";
 
 // A failing server must never crash a page. Every API function rejects; nothing else is mocked.
 vi.mock("@/api/client", async () => {
@@ -14,6 +17,27 @@ vi.mock("@/api/client", async () => {
 
 /** Pages that crash offline today: name -> error text. Remove a page from here when it is fixed. */
 const KNOWN_FAILING: Record<string, string> = {};
+
+/** *Page.tsx files with no page component to render alone. This list may only shrink. */
+const NEEDS_APP_CONTEXT: Record<string, string> = {
+  "SpendingPage.tsx": "exports SpendingProvider (the shared data), not a page",
+};
+
+/** No-op values for the props pages ask for. A new page prop that is missing here fails the test. */
+const NOOP = () => {};
+const PAGE_PROPS: Record<string, unknown> = {
+  navigate: NOOP,
+  onLeft: NOOP,
+  openList: NOOP,
+  openInbox: NOOP,
+  openHistory: NOOP,
+  view: "main",
+  setView: NOOP,
+};
+
+const modules = import.meta.glob<Record<string, unknown>>("./*Page.tsx", { eager: true });
+const pageComponents = (mod: Record<string, unknown>) =>
+  Object.entries(mod).filter(([name, value]) => name.endsWith("Page") && typeof value === "function") as Array<[string, ComponentType<Record<string, unknown>>]>;
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 50)); });
 
@@ -60,4 +84,45 @@ describe("offline smoke test", () => {
     const fixed = Object.keys(KNOWN_FAILING).filter((name) => !(name in failures));
     expect(fixed, "remove these from KNOWN_FAILING, they now pass").toEqual([]);
   }, 60_000);
+});
+
+describe("offline smoke test: every page file", () => {
+  it("each *Page.tsx has a page to render, or is listed in NEEDS_APP_CONTEXT", () => {
+    const problems: string[] = [];
+    for (const [path, mod] of Object.entries(modules)) {
+      const file = path.replace("./", "");
+      const count = pageComponents(mod).length;
+      if (count === 0 && !(file in NEEDS_APP_CONTEXT)) problems.push(`${file}: no exported *Page component. Fix the file, or list it in NEEDS_APP_CONTEXT with a reason.`);
+      if (count > 0 && file in NEEDS_APP_CONTEXT) problems.push(`${file}: it can be rendered now. Remove it from NEEDS_APP_CONTEXT.`);
+    }
+    for (const file of Object.keys(NEEDS_APP_CONTEXT)) {
+      if (!Object.keys(modules).includes(`./${file}`)) problems.push(`${file}: the file is gone. Remove it from NEEDS_APP_CONTEXT.`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  const cases = Object.values(modules).flatMap(pageComponents);
+  expect(cases.length).toBeGreaterThan(8);
+  it.each(cases.map(([name, Component]) => [name, Component] as const))("%s survives a server that always fails", async (name, Component) => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let failure = "";
+    try {
+      const view = render(
+        <SpendingProvider>
+          <ScrapeRunProvider>
+            <Component {...PAGE_PROPS} />
+          </ScrapeRunProvider>
+        </SpendingProvider>
+      );
+      await settle();
+      if (!view.container.textContent?.trim()) throw new Error("the page rendered no text");
+      if (errorSpy.mock.calls.length) throw new Error(`console.error: ${errorSpy.mock.calls[0].map(String).join(" ").slice(0, 300)}`);
+    } catch (e) {
+      failure = e instanceof Error ? e.message : String(e);
+    } finally {
+      errorSpy.mockRestore();
+    }
+    if (name in KNOWN_FAILING) expect(failure, `${name} now passes: remove it from KNOWN_FAILING`).not.toBe("");
+    else expect(failure, `${name} crashed offline`).toBe("");
+  });
 });
