@@ -32,6 +32,7 @@ Living snapshot, updated after every phase. Last update: 2026-10-21 (Home redesi
 - [x] Follow-up — Fewer YNAB reads (429s): tabs stay mounted, 60 s shared reads, "YNAB HH:MM" header line.
 - [x] Follow-up — Whole-app speed pass: every YNAB GET shared 60 s in `ynabRequest`; 2-month snapshot only on first read and Refresh; memo, installment-plan, run-file and id-map caches; Credential Manager read once per server start (restart the server after changing a credential outside the app); unused `/api/spending` fields removed. `getSpending` ~920 ms → ~210 ms on the same machine.
 - [x] Follow-up — Scrape Cancel closes the running scraper browser (library `terminate(false)`; account result "Canceled"; no retry). Unit-tested with a fake scraper; not tried on a real bank scrape.
+- [x] Follow-up (2026-11-02, branch `month-export`, pushed, not merged) — Month export: Reports page "Export months (JSON)" → `GET /api/spending/reports/export?from&to`; current month allowed as `partial`; code in `src/engine/month-export.ts`, `exportMonths` (reports-service), `monthDetail`/`categoryTypes` (getSpending), `ExportCard` (ReportsPage). Tests and a live read-only GET pass; browser download click not tried. The user must restart the API server on 3001 to get the route. Details: notes log 2026-11-02.
 
 ### User decisions that override stale plan text
 
@@ -108,3 +109,4 @@ Not built yet, suggested order:
 ## START HERE
 
 Ask which roadmap item (§2 "Not built yet") to build next — recommended: the day-by-day cash-flow forecast (item 1). After merging backend changes, the user must restart the API server (tsx has no watch); the GUI reloads by itself and expects the new API fields. Write a short plan, get approval, build, test with writes blocked, commit when asked, update this file and the notes log.
+- [ ] GUI restructuring (branch `month-export`): phase 1 done (Select, Field, useAsyncAction, useResource, ESLint ratchet, harness `explore-controls`, contract test, offline smoke test). Next: migrate pages when touched (CategorizePage, ScrapePage, HomePage first); speed up the harness run; cover Categorize/History/Reports in the smoke test. Process rules are in memory `gui-changes-need-test-and-browser-check`.
