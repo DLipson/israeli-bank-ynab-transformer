@@ -2,6 +2,8 @@ import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { useAsyncAction } from "@/lib/use-async-action";
 import { getInflows, saveSpendingSettings, setIncomeMark, type CreditLimitGroup, type IncomeMark, type Inflow, type SpendingData, type SpendingSettings } from "@/api/client";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { YnabPage } from "@/pages/YnabPage";
@@ -63,7 +65,6 @@ function NumberField({ value, onSave, aria, prefix, min = 0, max }: { value: num
 
 function CardLimits({ data, save }: { data: SpendingData; save: (patch: Partial<SpendingSettings>) => Promise<boolean> }) {
   const [groups, setGroups] = useDraft<CreditLimitGroup[]>(data.settings.creditLimits);
-  const [busy, setBusy] = useState(false);
   const cards = data.accounts.filter((a) => a.type === "creditCard" || a.type === "lineOfCredit");
   const update = (i: number, patch: Partial<CreditLimitGroup>) => setGroups((g) => g.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   /** Default name for a group: its cards' names, e.g. "Leumi Cards + Max Card". */
@@ -71,6 +72,8 @@ function CardLimits({ data, save }: { data: SpendingData; save: (patch: Partial<
   // A card belongs to one group: ticking it here removes it from the others.
   const toggleCard = (i: number, id: string) =>
     setGroups((g) => g.map((x, j) => (j === i ? { ...x, accountIds: x.accountIds.includes(id) ? x.accountIds.filter((a) => a !== id) : [...x.accountIds, id] } : { ...x, accountIds: x.accountIds.filter((a) => a !== id) })));
+
+  const { run: saveLimits, busy } = useAsyncAction(() => save({ creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || groupName(g) })) }));
 
   return (
     <div className="space-y-2 pb-2">
@@ -107,11 +110,7 @@ function CardLimits({ data, save }: { data: SpendingData; save: (patch: Partial<
         <Button
           size="sm"
           disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            await save({ creditLimits: groups.filter((g) => g.accountIds.length).map((g) => ({ ...g, name: g.name.trim() || groupName(g) })) });
-            setBusy(false);
-          }}
+          onClick={() => void saveLimits()}
         >
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save card limits
         </Button>
@@ -161,16 +160,13 @@ function IncomeMarks() {
       </span>
       <span className="flex shrink-0 items-center gap-2">
         {shekels(i.amount)}
-        <select
+        <Select
           aria-label={`Income mark for ${i.payee}`}
-          className="h-7 rounded-md border bg-background px-1 text-xs"
+          className="h-7 px-1 text-xs"
           value={i.mark ?? ""}
-          onChange={(e) => void change(i.id, (e.target.value || null) as IncomeMark | null)}
-        >
-          <option value="">Usual rule</option>
-          <option value="income">Count as income</option>
-          <option value="not-income">Not income</option>
-        </select>
+          onChange={(v) => void change(i.id, (v || null) as IncomeMark | null)}
+          options={MARK_OPTIONS}
+        />
       </span>
     </div>
   );
@@ -196,6 +192,17 @@ function IncomeMarks() {
     </div>
   );
 }
+
+const MARK_OPTIONS = [
+  { value: "", label: "Usual rule" },
+  { value: "income", label: "Count as income" },
+  { value: "not-income", label: "Not income" },
+];
+
+const PAYDAY_OPTIONS = [
+  { value: "month-start", label: "Month end" },
+  ...Array.from({ length: 30 }, (_, i) => ({ value: String(i + 2), label: `Day ${i + 2}` })),
+];
 
 const LINKS = [
   { view: "income", text: "Income: count or leave out an entry" },
@@ -234,19 +241,13 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
       <p className="mb-2 font-medium">Settings</p>
       {message && <p className={cn("mb-1 text-xs", message.ok ? "text-green-700 dark:text-green-400" : "text-destructive")}>{message.text}</p>}
       <Setting title="Payday" help="“Available until payday” counts until the day before this date.">
-        <select
+        <Select
           aria-label="Payday"
-          className="h-8 shrink-0 rounded-md border bg-background px-2 text-sm"
+          className="shrink-0"
           value={String(s.payday)}
-          onChange={(e) => void save({ payday: e.target.value === "month-start" ? "month-start" : Number(e.target.value) })}
-        >
-          <option value="month-start">Month end</option>
-          {Array.from({ length: 30 }, (_, i) => i + 2).map((d) => (
-            <option key={d} value={d}>
-              Day {d}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => void save({ payday: v === "month-start" ? "month-start" : Number(v) })}
+          options={PAYDAY_OPTIONS}
+        />
       </Setting>
       <Setting title="Buffer" help="Money that the app never counts as available.">
         <NumberField aria="Buffer" prefix="₪" value={Math.round(s.buffer / K)} onSave={(n) => void save({ buffer: n * K })} />

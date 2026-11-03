@@ -41,7 +41,7 @@ export default defineConfig([
   },
   {
     // Legacy files that still use a raw <select>: remove a file from this list when it is migrated.
-    files: ['src/pages/CategorizePage.tsx', 'src/pages/SettingsPage.tsx', 'src/pages/YnabPage.tsx'],
+    files: ['src/pages/CategorizePage.tsx', 'src/pages/YnabPage.tsx'],
     rules: {
       'no-restricted-syntax': [
         'warn',
