@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   getYnabAccounts,
   getYnabBudgets,
@@ -13,8 +14,6 @@ import {
   type YnabImportConfig,
   type YnabOption,
 } from "@/api/client";
-
-const selectClass = "h-9 w-full rounded-md border bg-background px-2 text-sm";
 
 export function YnabPage() {
   const [config, setConfig] = useState<YnabImportConfig>({ budgetId: "", mappings: {} });
@@ -141,20 +140,15 @@ export function YnabPage() {
 
         <div className="space-y-2">
           <Label htmlFor="ynab-budget">Budget</Label>
-          <select
+          <Select
             id="ynab-budget"
-            className={selectClass}
+            className="h-9 w-full"
             value={config.budgetId}
             disabled={!tokenSaved}
-            onChange={(e) => setBudget(e.target.value)}
-          >
-            <option value="">Select a budget</option>
-            {budgets.map((budget) => (
-              <option key={budget.id} value={budget.id}>
-                {budget.name}
-              </option>
-            ))}
-          </select>
+            onChange={setBudget}
+            options={budgets.map((budget) => ({ value: budget.id, label: budget.name }))}
+            emptyLabel="Select a budget"
+          />
         </div>
 
         {sources.length === 0 ? (
@@ -164,20 +158,15 @@ export function YnabPage() {
             {sources.map((source) => (
               <div key={source} className="grid items-center gap-2 sm:grid-cols-2">
                 <Label htmlFor={`map-${source}`}>{source}</Label>
-                <select
+                <Select
                   id={`map-${source}`}
-                  className={selectClass}
+                  className="h-9 w-full"
                   value={config.mappings[source]}
                   disabled={!config.budgetId}
-                  onChange={(e) => setMapping(source, e.target.value)}
-                >
-                  <option value="">Do not import</option>
-                  {ynabAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(accountId) => setMapping(source, accountId)}
+                  options={ynabAccounts.map((account) => ({ value: account.id, label: account.name }))}
+                  emptyLabel="Do not import"
+                />
               </div>
             ))}
           </div>

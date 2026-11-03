@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { YnabPage } from "@/pages/YnabPage";
 import { SpendingProvider } from "@/pages/SpendingPage";
@@ -52,6 +52,19 @@ describe("YNAB page", () => {
     expect(screen.getByLabelText("Max")).toHaveValue("a1");
     expect(screen.getByLabelText("Leumi")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("lets the user go back to no budget, which disables the mapping selects", async () => {
+    render(page);
+    const budget = await screen.findByLabelText("Budget");
+    await screen.findByRole("option", { name: "Family" });
+    expect(budget).toHaveValue("b1");
+    expect(screen.getByLabelText("Max")).toBeEnabled();
+    fireEvent.change(budget, { target: { value: "" } });
+    expect(budget).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Select a budget" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Max")).toBeDisabled();
+    expect(screen.getByLabelText("Leumi")).toBeDisabled();
   });
 
   it("keeps its controls independent", async () => {
