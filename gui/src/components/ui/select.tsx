@@ -7,11 +7,11 @@ interface SelectProps<V extends string | number> extends Omit<SelectHTMLAttribut
   // No per-option `disabled`, on purpose: options that grey out other options caused a real bug.
   // A caller that needs fewer choices passes fewer options.
   options: Array<{ value: V; label: string }>;
-  /** An empty first option, shown only while the value is "". */
-  placeholder?: string;
+  /** An empty-value option with this label, always shown, so the user can go back to "nothing chosen". */
+  emptyLabel?: string;
 }
 
-function Select<V extends string | number>({ value, onChange, options, placeholder, className, ...props }: SelectProps<V>) {
+function Select<V extends string | number>({ value, onChange, options, emptyLabel, className, ...props }: SelectProps<V>) {
   return (
     <select
       className={cn(
@@ -23,10 +23,11 @@ function Select<V extends string | number>({ value, onChange, options, placehold
       onChange={(e) => {
         const option = options.find((o) => String(o.value) === e.target.value);
         if (option) onChange(option.value);
+        else if (emptyLabel !== undefined && e.target.value === "") onChange("" as V);
       }}
       {...props}
     >
-      {placeholder !== undefined && value === "" && <option value="">{placeholder}</option>}
+      {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}

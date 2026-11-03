@@ -28,12 +28,15 @@ describe("Select", () => {
     expect(onChange).toHaveBeenCalledWith(12);
   });
 
-  it("shows the placeholder only while the value is empty", () => {
+  it("always offers the empty choice, and choosing it gives an empty value", () => {
     const options = [{ value: "a", label: "A" }];
-    const { rerender } = render(<Select aria-label="Pick" value="" onChange={() => {}} options={options} placeholder="Choose" />);
-    expect(screen.getByRole("option", { name: "Choose" })).toBeInTheDocument();
-    rerender(<Select aria-label="Pick" value="a" onChange={() => {}} options={options} placeholder="Choose" />);
-    expect(screen.queryByRole("option", { name: "Choose" })).not.toBeInTheDocument();
+    const onChange = vi.fn();
+    const { rerender } = render(<Select aria-label="Pick" value="" onChange={onChange} options={options} emptyLabel="Nothing" />);
+    expect(screen.getByRole("option", { name: "Nothing" })).toBeInTheDocument();
+    rerender(<Select aria-label="Pick" value="a" onChange={onChange} options={options} emptyLabel="Nothing" />);
+    expect(screen.getByRole("option", { name: "Nothing" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Pick"), { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith("");
   });
 
   it("keeps two selects independent", async () => {
