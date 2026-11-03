@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,9 +25,20 @@ function Setting({ title, help, children }: { title: string; help: string; child
   );
 }
 
+/** A draft the user edits. When its own saved value changes, the draft starts again from it; other saves leave it alone. */
+function useDraft<T>(saved: T): [T, Dispatch<SetStateAction<T>>] {
+  const [draft, setDraft] = useState(saved);
+  const [seen, setSeen] = useState(JSON.stringify(saved));
+  if (JSON.stringify(saved) !== seen) {
+    setSeen(JSON.stringify(saved));
+    setDraft(saved);
+  }
+  return [draft, setDraft];
+}
+
 /** A whole-number field that saves on Enter or when it loses focus. */
 function NumberField({ value, onSave, aria, prefix, min = 0, max }: { value: number; onSave: (n: number) => void; aria: string; prefix?: string; min?: number; max?: number }) {
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useDraft(String(value));
   return (
     <span className="shrink-0 whitespace-nowrap">
       {prefix}
@@ -51,7 +62,7 @@ function NumberField({ value, onSave, aria, prefix, min = 0, max }: { value: num
 }
 
 function CardLimits({ data, save }: { data: SpendingData; save: (patch: Partial<SpendingSettings>) => Promise<boolean> }) {
-  const [groups, setGroups] = useState<CreditLimitGroup[]>(data.settings.creditLimits);
+  const [groups, setGroups] = useDraft<CreditLimitGroup[]>(data.settings.creditLimits);
   const [busy, setBusy] = useState(false);
   const cards = data.accounts.filter((a) => a.type === "creditCard" || a.type === "lineOfCredit");
   const update = (i: number, patch: Partial<CreditLimitGroup>) => setGroups((g) => g.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -197,7 +208,7 @@ function Main({ data, open }: { data: SpendingData; open: (view: string) => void
   const { reload } = useSpending();
   const s = data.settings;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [essentials, setEssentials] = useState(s.essentialCategoryIds);
+  const [essentials, setEssentials] = useDraft(s.essentialCategoryIds);
   const [limitsOpen, setLimitsOpen] = useState(false);
 
   const save = async (patch: Partial<SpendingSettings>): Promise<boolean> => {
@@ -294,5 +305,5 @@ export function SettingsPage({ view, setView }: { view: string; setView: (view: 
     );
   }
   if (!data) return <SpendingLoading />;
-  return <Main key={JSON.stringify(data.settings)} data={data} open={setView} />;
+  return <Main data={data} open={setView} />;
 }
