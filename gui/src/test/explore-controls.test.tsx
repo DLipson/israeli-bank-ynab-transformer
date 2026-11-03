@@ -95,6 +95,30 @@ function PairBug() {
   );
 }
 
+/** B depends on A. `rule` decides when B is disabled; `optionsOff` disables an option of B instead. */
+function Dependent({ rule, optionsOff = false }: { rule: (a: string) => boolean; optionsOff?: boolean }) {
+  const [a, setA] = useState("");
+  const [b, setB] = useState("1");
+  return (
+    <div>
+      <label>
+        Budget
+        <select value={a} onChange={(e) => setA(e.target.value)}>
+          <option value="">None</option>
+          <option value="x">X</option>
+        </select>
+      </label>
+      <label>
+        Account
+        <select value={b} disabled={!optionsOff && rule(a)} onChange={(e) => setB(e.target.value)}>
+          <option value="1">One</option>
+          <option value="2" disabled={optionsOff && rule(a)}>Two</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
 describe("exploreControls", { timeout: 60_000 }, () => {
   it("finds a control that moves another control (I3)", async () => {
     await expect(exploreControls(<AutoMove />)).rejects.toThrow(/I3 violated/);
@@ -118,5 +142,17 @@ describe("exploreControls", { timeout: 60_000 }, () => {
 
   it("fails a control without a name (I0)", async () => {
     await expect(exploreControls(<input />)).rejects.toThrow(/I0 violated/);
+  });
+
+  it("allows a control that is disabled while its prerequisite is empty (requires)", async () => {
+    await expect(exploreControls(<Dependent rule={(a) => a === ""} />, { requires: [["Account", "Budget"]] })).resolves.toBeUndefined();
+  });
+
+  it("still fails when the same control is disabled while its prerequisite is set", async () => {
+    await expect(exploreControls(<Dependent rule={(a) => a !== ""} />, { requires: [["Account", "Budget"]] })).rejects.toThrow(/I4 violated/);
+  });
+
+  it("fails a disabled option even with requires", async () => {
+    await expect(exploreControls(<Dependent rule={(a) => a === ""} optionsOff />, { requires: [["Account", "Budget"]] })).rejects.toThrow(/I1 violated/);
   });
 });

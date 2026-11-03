@@ -16,11 +16,19 @@
  *   I3  no other control changed its value
  *   I4  no control became disabled
  *   I5  no console.error, console.warn or thrown error
+ * Before each step the previously edited text field loses focus (blur), as it does for a user.
  *
  * INTENTIONAL COUPLING: if one control must change another on purpose, list the pair by
  * accessible name. The pair is allowed in both directions (I3 only):
  *
  *   await exploreControls(<MyCard />, { coupled: [["Country", "City"]] });
+ *
+ * PREREQUISITE: a control that is disabled because the control it depends on is empty is allowed
+ * (I4 only). List it as [dependent, prerequisite]; "empty" is "" or unchecked:
+ *
+ *   await exploreControls(<MyCard />, { requires: [["City", "Country"]] });
+ *
+ * Any other disabling still fails. A disabled option (I1) is never allowed, with or without `requires`.
  *
  * Prefer to remove the coupling: a design where every combination is valid needs none.
  * With more than `maxRuns` runs (default 150), the runs are sampled with a fixed seed. The first,
@@ -164,13 +172,18 @@ function describeSteps(steps: Step[]): string {
   return steps.map((s) => `${s.name} = ${JSON.stringify(s.value)}`).join(" -> ");
 }
 
-export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<[string, string]>; maxRuns?: number } = {}): Promise<void> {
+/** Lets data that a mocked API returns right away reach the screen before the controls are read. */
+const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<[string, string]>; requires?: Array<[dependent: string, prerequisite: string]>; maxRuns?: number } = {}): Promise<void> {
   const coupled = opts.coupled ?? [];
+  const requires = opts.requires ?? [];
   const maxRuns = opts.maxRuns ?? DEFAULT_MAX_RUNS;
   const isCoupled = (a: string, b: string) => coupled.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
   // Plan the runs from one render.
   const first = render(ui);
+  await flush();
   const initial = collect(first.container);
   const plan = initial.map((c) => ({ name: c.name, values: valuesOf(c) }));
   first.unmount();
@@ -203,13 +216,14 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
     // second step is tried in turn. A render costs about as much as two steps, so this is the main saving.
     const groups = new Map<string, { first?: Step; seconds: Step[] }>();
     for (const steps of selected.length ? selected : [[]]) {
-      const key = steps[0] ? `${steps[0].name} ${JSON.stringify(steps[0].value)}` : "";
+      const key = steps[0] ? `${steps[0].name}\u0000${JSON.stringify(steps[0].value)}` : "";
       const group = groups.get(key) ?? { first: steps[0], seconds: [] };
       if (steps[1]) group.seconds.push(steps[1]);
       groups.set(key, group);
     }
     for (const { first, seconds } of groups.values()) {
       const view = render(ui);
+      await flush();
       const done: Step[] = [];
       const fail = (rule: string, who: string, detail: string): never => {
         throw new Error(`${rule} violated for control "${who}" after actions [${describeSteps(done) || "none"}]: ${detail}`);
@@ -223,7 +237,12 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
             if (bad.length) fail("I1", c.name, `options cannot be chosen (disabled): ${bad.join(", ")}`);
           }
           for (const name of disabledControls(controls)) {
-            if (!startDisabled.has(name)) fail("I4", name, "the control became disabled");
+            if (startDisabled.has(name)) continue;
+            const emptyPrerequisite = requires.some(([dependent, prerequisite]) => {
+              const value = controls.find((c) => c.name === prerequisite);
+              return dependent === name && value !== undefined && (read(value) === "" || read(value) === false);
+            });
+            if (!emptyPrerequisite) fail("I4", name, "the control became disabled");
           }
           if (errorSpy.mock.calls.length || warnSpy.mock.calls.length) {
             const call = (errorSpy.mock.calls[0] ?? warnSpy.mock.calls[0]).map(String).join(" ");
@@ -232,10 +251,24 @@ export async function exploreControls(ui: ReactElement, opts: { coupled?: Array<
         };
         check(startControls);
 
+        let previous = "";
         const applyStep = async (step: Step) => {
+          // A user who moves to another control leaves the last one: a text field commits on blur.
+          const left = collect(view.container).find((c) => c.name === previous);
+          if (left && (left.kind === "text" || left.kind === "number")) {
+            await act(async () => {
+              fireEvent.blur(left.els[0]);
+              await new Promise((r) => setTimeout(r, 0));
+            });
+          }
+          previous = step.name;
           const before = snapshot(collect(view.container));
           const control = collect(view.container).find((c) => c.name === step.name);
+          // A control that an earlier step removed on purpose (a declared coupling) cannot be set now.
+          if (!control && coupled.some((pair) => pair.includes(step.name))) return;
           if (!control) fail("I3", step.name, "the control disappeared");
+          // A user cannot change a disabled control (a prerequisite is empty): skip the step.
+          if (control!.els.some((e) => e.disabled)) return;
           done.push(step);
           try {
             await write(control!, step.value);
